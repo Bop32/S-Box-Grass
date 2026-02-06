@@ -9,9 +9,8 @@ public sealed class Grass : BasePostProcess<Grass>
 		Vector3 Position;
 		Vector3 Normal;
 		float Rotation;
+		float Stiffness;
 		float BendAmount;
-		float Noise;
-		bool ShouldDiscard;
 	};
 
 	struct FrustumPlane
@@ -30,7 +29,13 @@ public sealed class Grass : BasePostProcess<Grass>
 	}
 
 	[Property]
-	private Model grassModel;
+	private Model highLodGrassModel;
+
+	[Property]
+	private Mesh test;
+
+	[Property]
+	private Model lowLodGrassModel;
 
 	[Property]
 	private Terrain terrain;
@@ -45,7 +50,9 @@ public sealed class Grass : BasePostProcess<Grass>
 	public Vector2 chunkSize;
 
 	private ComputeShader grassComputeShader;
-	private GpuBuffer<GrassData> grassGpuBuffer;
+	private GpuBuffer<GrassData> grassGpuBufferHighLod;
+
+	private GpuBuffer<GrassData> grassGpuBufferLowLod;
 
 	private int totalGrassCount = 0;
 
@@ -53,14 +60,17 @@ public sealed class Grass : BasePostProcess<Grass>
 
 	private GrassData[] grassData;
 
-	private GpuBuffer<IndirectCommand> indirectBuffer;
+	private GpuBuffer<IndirectCommand> highLodIndirectBuffer;
+
+	private GpuBuffer<IndirectCommand> lowLodIndirectBuffer;
 
 	protected override void OnAwake()
 	{
 		commandList = new CommandList();
 
 		totalGrassCount = grassCountPerChunk * chunkCount;
-		grassGpuBuffer = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBuffer" );
+		grassGpuBufferHighLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferHighLOD" );
+		grassGpuBufferLowLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferLowLOD" );
 
 		grassComputeShader = new ComputeShader( "shaders/Grass.Compute.shader" );
 
@@ -70,43 +80,47 @@ public sealed class Grass : BasePostProcess<Grass>
 		grassComputeShader.Attributes.Set( "TerrainPosition", terrain.WorldPosition );
 		grassComputeShader.Attributes.Set( "ChunkSize", chunkSize );
 		grassComputeShader.Attributes.Set( "ChunkCount", chunkCount );
-		grassComputeShader.Attributes.Set( "GrassData", grassGpuBuffer );
+		grassComputeShader.Attributes.Set( "GrassHighLodData", grassGpuBufferHighLod );
+		grassComputeShader.Attributes.Set( "GrassLowLodData", grassGpuBufferLowLod );
 
 		grassData = new GrassData[totalGrassCount];
-		grassGpuBuffer.SetData( grassData );
+		grassGpuBufferHighLod.SetData( grassData );
 
-		indirectBuffer = new( 1, GpuBuffer.UsageFlags.IndirectDrawArguments | GpuBuffer.UsageFlags.Structured, "IndirectBuffer" );
+		highLodIndirectBuffer = CreateIndirectBuffer( highLodGrassModel.GetIndexCount( 0 ), totalGrassCount );
+		lowLodIndirectBuffer = CreateIndirectBuffer( lowLodGrassModel.GetIndexCount( 0 ), totalGrassCount );
 
-		indirectBuffer.SetData( [
-				new IndirectCommand {
-				IndexCount = (uint)grassModel.GetIndexCount(0),
-				InstanceCount = (uint)totalGrassCount,
-				FirstIndex = 0,
-				VertexOffset = 0,
-				FirstInstance = 0
-			}
-			] );
+
 	}
 
 	public override void Render()
 	{
-		if ( grassGpuBuffer == null || !grassGpuBuffer.IsValid() ) return;
+		if ( grassGpuBufferHighLod == null || !grassGpuBufferHighLod.IsValid() ) return;
 
 		commandList.Reset();
 
 
-		grassGpuBuffer.SetCounterValue( 0 );
+		grassGpuBufferHighLod.SetCounterValue( 0 );
+		grassGpuBufferLowLod.SetCounterValue( 0 );
+
 		grassComputeShader.Attributes.SetData( "FrustumPlanes", GetCameraFrustum() );
+		grassComputeShader.Attributes.Set( "CameraPosition", Camera.WorldPosition );
+
 		grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
 
-		commandList.Attributes.Set( "GrassData", grassGpuBuffer );
-
-		grassGpuBuffer.CopyStructureCount( indirectBuffer, 4 );
-		commandList.DrawModelInstancedIndirect( grassModel, indirectBuffer );
+		commandList.Attributes.Set( "CameraPosition", Camera.WorldPosition );
+		InstanceGrass( highLodGrassModel, grassGpuBufferHighLod, highLodIndirectBuffer );
+		InstanceGrass( lowLodGrassModel, grassGpuBufferLowLod, lowLodIndirectBuffer );
 
 		InsertCommandList( commandList, Stage.AfterOpaque, 0, "Grass" );
 	}
 
+	private void InstanceGrass( Model grassModel, GpuBuffer<GrassData> gpuBuffer, GpuBuffer<IndirectCommand> indirectCommandBuffer )
+	{
+		commandList.Attributes.Set( "GrassData", gpuBuffer );
+
+		gpuBuffer.CopyStructureCount( indirectCommandBuffer, 4 );
+		commandList.DrawModelInstancedIndirect( grassModel, indirectCommandBuffer );
+	}
 
 	private FrustumPlane[] GetCameraFrustum()
 	{
@@ -126,12 +140,38 @@ public sealed class Grass : BasePostProcess<Grass>
 		return planes;
 	}
 
+	private GpuBuffer<IndirectCommand> CreateIndirectBuffer( int indexCount, int instanceCount )
+	{
+		GpuBuffer<IndirectCommand> gpuBuffer = new( 1, GpuBuffer.UsageFlags.IndirectDrawArguments | GpuBuffer.UsageFlags.Structured, "IndirectBuffer" );
+
+		gpuBuffer.SetData( [
+				new IndirectCommand
+			{
+				IndexCount = (uint)highLodGrassModel.GetIndexCount(0),
+				InstanceCount = (uint)totalGrassCount,
+				FirstIndex = 0,
+				VertexOffset = 0,
+				FirstInstance = 0
+			}] );
+
+		return gpuBuffer;
+	}
+
 	protected override void OnDestroy()
 	{
-		grassGpuBuffer?.Dispose();
-		grassGpuBuffer = null;
+		grassGpuBufferHighLod?.Dispose();
+		grassGpuBufferHighLod = null;
 
-		indirectBuffer?.Dispose();
-		indirectBuffer = null;
+		highLodIndirectBuffer?.Dispose();
+		highLodIndirectBuffer = null;
+	}
+
+	protected override void OnDisabled()
+	{
+		grassGpuBufferHighLod?.Dispose();
+		grassGpuBufferHighLod = null;
+
+		highLodIndirectBuffer?.Dispose();
+		highLodIndirectBuffer = null;
 	}
 }

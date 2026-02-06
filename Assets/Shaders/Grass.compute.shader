@@ -12,9 +12,8 @@ CS
 		float3 Position;	
 		float3 Normal;		
 		float  Rotation;	
+		float  Stiffness;
 		float  BendAmount;	
-		float  Noise;        
-		bool   ShouldDiscard;
 	};		
 	
 	struct FrustumPlane
@@ -80,7 +79,8 @@ CS
 	}
 
 
-	AppendStructuredBuffer<GrassData> grass < Attribute( "GrassData" ); >;
+	AppendStructuredBuffer<GrassData> grassHighLod < Attribute( "GrassHighLodData" ); >;
+	AppendStructuredBuffer<GrassData> grassLowLod < Attribute( "GrassLowLodData" ); >;
 
 	Texture2D<float> _HeightMap <Attribute("HeightMap"); >;
 
@@ -89,6 +89,8 @@ CS
 	float time <Attribute("time"); >;
 
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
+
+	float3 cameraPosition < Attribute("CameraPosition"); >;
 
 	float2 chunkSize < Attribute("ChunkSize"); >;
 
@@ -125,7 +127,7 @@ CS
 
         float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
 
-		//worldXY += GetClumpOffset(centerOfChunk, index);
+		worldXY += GetClumpOffset(centerOfChunk, index);
 		
 		uint texWidth, texHeight;
 		_HeightMap.GetDimensions(texWidth, texHeight);
@@ -157,11 +159,37 @@ CS
         GrassData grassData;
 
         grassData.Position   = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
-        grassData.Rotation   = Random(index * 17u + time, -2.0f * PI, 2.0f * PI);
-        grassData.BendAmount = Random(index * 23u + time, 0.03f, 0.1f);
+        grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
+        grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
+		grassData.Stiffness  = Random(index * 12u, 0.0f, 0.8f);
 		grassData.Normal	 = normalize(float3(-dx, -dy, 2.0));
-		grassData.Noise		 = HashXY(worldXY.x, worldXY.y);
         
-		grass.Append(grassData);
+		float dist = distance(cameraPosition, grassData.Position);
+
+		float chance = Hash(index);
+
+		const float endDistance = 7000;
+
+		if (dist > endDistance) return;
+
+		const float startDistance = 1500;
+
+		// As distance increases, more chance for threshold to fail.
+		float densityThreshold = 0.8 - saturate((dist - startDistance) / (endDistance - startDistance));
+		
+		if (chance > densityThreshold) return;
+
+		float lodTransitionDist = 1500.0;
+		float crossFadeRange = 450.0 + Random(index * 19u, 0.0, 50.0); 
+
+		if (dist < lodTransitionDist + crossFadeRange) 
+		{
+			grassHighLod.Append(grassData);
+		}
+		else 
+		{
+			grassLowLod.Append(grassData);
+		}
+
     }
 }
