@@ -14,6 +14,8 @@ CS
 		float  Rotation;	
 		float  Stiffness;
 		float  BendAmount;	
+		float BladeHash;
+		float DistanceFromCamera;
 	};		
 	
 	struct FrustumPlane
@@ -44,6 +46,17 @@ CS
 		return frac(sin(x * 12.9898f + y * 78.233f) * 43758.5453f);
 	}
 
+	float HashXY(float2 value)
+	{
+		return frac(sin(value.x * 12.9898f + value.y * 78.233f) * 43758.5453f);
+	}
+
+	float Hash12(float2 p)
+	{
+		float3 p3 = frac(float3(p.xyx) * 0.1031);
+		p3 += dot(p3, p3.yzx + 33.33);
+		return frac((p3.x + p3.y) * p3.z);
+	}
 	
 	float Random(uint seed, float minVal, float maxVal)
 	{
@@ -127,7 +140,7 @@ CS
 
         float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
 
-		worldXY += GetClumpOffset(centerOfChunk, index);
+		//worldXY += GetClumpOffset(centerOfChunk, index);
 		
 		uint texWidth, texHeight;
 		_HeightMap.GetDimensions(texWidth, texHeight);
@@ -156,37 +169,41 @@ CS
 		float dx = heightRight - heightLeft;
 		float dy = heightTop - heightBottom;
 
-        GrassData grassData;
+		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
 
-        grassData.Position   = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
-        grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
-        grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
-		grassData.Stiffness  = Random(index * 12u, 0.0f, 0.8f);
-		grassData.Normal	 = normalize(float3(-dx, -dy, 2.0));
-        
-		float dist = distance(cameraPosition, grassData.Position);
+		float dist = distance(cameraPosition, grassPosition);
 
-		float chance = Hash(index);
+		float bladeHash = Hash12(worldXY);
 
 		const float endDistance = 7000;
 
 		if (dist > endDistance) return;
 
-		const float startDistance = 1500;
+		const float startDistance = 2000;
 
 		// As distance increases, more chance for threshold to fail.
-		float densityThreshold = 0.8 - saturate((dist - startDistance) / (endDistance - startDistance));
+		float densityThreshold = 0.75 - saturate((dist - startDistance) / (endDistance - startDistance));
 		
-		if (chance > densityThreshold) return;
+		if (bladeHash > densityThreshold) return;
+
+        GrassData grassData;
+
+        grassData.Position   = grassPosition;
+        grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
+        grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
+		grassData.Stiffness  = Random(index * 12u, 0.2f, 1.0f);
+		grassData.Normal	 = normalize(float3(-dx, -dy, 2.0));
+		grassData.BladeHash  = bladeHash;
+		grassData.DistanceFromCamera = dist;
 
 		float lodTransitionDist = 1500.0;
-		float crossFadeRange = 450.0 + Random(index * 19u, 0.0, 50.0); 
+		float crossFadeRange = bladeHash * 500.0f;
 
-		if (dist < lodTransitionDist + crossFadeRange) 
-		{
+		if (dist < lodTransitionDist + crossFadeRange)
+		{						
 			grassHighLod.Append(grassData);
 		}
-		else 
+		else
 		{
 			grassLowLod.Append(grassData);
 		}

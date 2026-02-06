@@ -11,6 +11,9 @@ public sealed class Grass : BasePostProcess<Grass>
 		float Rotation;
 		float Stiffness;
 		float BendAmount;
+		float BladeHash;
+		float DistanceFromCamera;
+
 	};
 
 	struct FrustumPlane
@@ -29,25 +32,22 @@ public sealed class Grass : BasePostProcess<Grass>
 	}
 
 	[Property]
-	private Model highLodGrassModel;
+	private Model highLodGrassModel = null;
 
 	[Property]
-	private Mesh test;
+	private Model lowLodGrassModel = null;
 
 	[Property]
-	private Model lowLodGrassModel;
+	private Terrain terrain = null;
 
 	[Property]
-	private Terrain terrain;
+	public int grassCountPerChunk = 0;
 
 	[Property]
-	public int grassCountPerChunk;
+	public int chunkCount = 0;
 
 	[Property]
-	public int chunkCount;
-
-	[Property]
-	public Vector2 chunkSize;
+	public Vector2 chunkSize = Vector2.Zero;
 
 	private ComputeShader grassComputeShader;
 	private GpuBuffer<GrassData> grassGpuBufferHighLod;
