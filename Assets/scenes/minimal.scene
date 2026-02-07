@@ -260,13 +260,6 @@
             "component_id": "26ef65ad-2471-4b8a-915b-92636bbeb819",
             "go": "cc74caa1-545e-4542-8d63-a3af3b3b0330",
             "component_type": "Terrain"
-          },
-          "test": {
-            "IsValid": true,
-            "HasIndexBuffer": false,
-            "IndexCount": 0,
-            "HasVertexBuffer": false,
-            "VertexCount": 0
           }
         },
         {

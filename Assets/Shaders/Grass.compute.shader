@@ -175,14 +175,14 @@ CS
 
 		float bladeHash = Hash12(worldXY);
 
-		const float endDistance = 7000;
+		const float endDistance = 10000;
 
 		if (dist > endDistance) return;
 
 		const float startDistance = 2000;
 
 		// As distance increases, more chance for threshold to fail.
-		float densityThreshold = 0.75 - saturate((dist - startDistance) / (endDistance - startDistance));
+		float densityThreshold = 0.5 - saturate((dist - startDistance) / (endDistance - startDistance));
 		
 		if (bladeHash > densityThreshold) return;
 
@@ -197,7 +197,7 @@ CS
 		grassData.DistanceFromCamera = dist;
 
 		float lodTransitionDist = 1500.0;
-		float crossFadeRange = bladeHash * 500.0f;
+		float crossFadeRange = bladeHash * 2500.0f;
 
 		if (dist < lodTransitionDist + crossFadeRange)
 		{						
