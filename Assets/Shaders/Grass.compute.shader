@@ -91,7 +91,6 @@ CS
 		return true;
 	}
 
-
 	AppendStructuredBuffer<GrassData> grassHighLod < Attribute( "GrassHighLodData" ); >;
 	AppendStructuredBuffer<GrassData> grassLowLod < Attribute( "GrassLowLodData" ); >;
 
@@ -100,113 +99,162 @@ CS
 	int grassCount <Attribute("GrassCount"); >;
 
 	float time <Attribute("time"); >;
-
+	
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
-
+	
 	float3 cameraPosition < Attribute("CameraPosition"); >;
-
+	
 	float2 chunkSize < Attribute("ChunkSize"); >;
-
+	
 	int chunkCount < Attribute("ChunkCount"); >;
-
+	
+	float2 terrainSize <Attribute("TerrainSize"); >;
+	
 	float clumpStrength < Attribute("ClumpStrength"); Default(0.3f); >;
-
+	
 	float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
 
-	[numthreads(64, 1, 1)]
-    void MainCs(uint3 id : SV_DispatchThreadID)
-    {
-        uint index = id.x;
-        
-		if (index >= grassCount) return;
 
+	float2 GetChunkOffset(uint index, uint chunksPerRow, float2 chunkSize, float2 halfChunk)
+	{
 		uint grassPerChunk = grassCount / chunkCount;
-
 		uint chunkIndex = index / grassPerChunk;
-
-		uint chunksPerRow = (uint)sqrt(chunkCount);
-
 		uint chunkIndexX = chunkIndex % chunksPerRow;
 		uint chunkIndexY = chunkIndex / chunksPerRow;
-
-		float2 halfChunk = chunkSize * 0.5f;
-
-        float jitterX = Random(index * 13u + time, -halfChunk.x, halfChunk.x);
-        float jitterY = Random(index * 31u + time, -halfChunk.y, halfChunk.y);
-
-		float2 chunkOffset = float2(chunkIndexX * chunkSize.x, chunkIndexY * chunkSize.y) + halfChunk;
-
-		float2 centerOfChunk = terrainPosition.xy + chunkOffset;
-
-        float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
-
-		//worldXY += GetClumpOffset(centerOfChunk, index);
 		
-		uint texWidth, texHeight;
-		_HeightMap.GetDimensions(texWidth, texHeight);
+		return float2(chunkIndexX * chunkSize.x, chunkIndexY * chunkSize.y) + halfChunk;
+	}
 
-		float2 terrainSize = chunkSize * chunksPerRow;
+	float2 GetJitteredPosition(uint index, float2 centerOfChunk, float2 halfChunk)
+	{
+		float jitterX = Random(index * 13u + time, -halfChunk.x, halfChunk.x);
+		float jitterY = Random(index * 31u + time, -halfChunk.y, halfChunk.y);
+		float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
+		return worldXY + GetClumpOffset(centerOfChunk, index);
+	}
 
-		float2 uv = (worldXY - terrainPosition.xy) / terrainSize;
-		uint2 texel = uint2(uv.x * (texWidth - 1), uv.y * (texHeight - 1));
+	uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
+	{
+		float2 uv = (worldXY - terrainPosition.xy) / terrainSize.x;
+		return uint2(uv.x * (texWidth - 1), uv.y * (texHeight - 1));
+	}
 
-		float height = _HeightMap.Load(int3(texel.x, texel.y, 0)).r * terrainSize.x;
+	float SampleHeight(uint2 texel)
+	{
+		return _HeightMap.Load(int3(texel.x, texel.y, 0)).r * terrainSize.y;
+	}
 
-		if(!InsideCameraFrustrum(float3(worldXY, height + terrainPosition.z))) return;
+	struct TerrainNormalData
+	{
+		float3 Normal;
+		float SlopeAngle;
+	};
 
-		float texelSizeWorld = terrainSize.x / texWidth;
-    
+	TerrainNormalData CalculateTerrainNormal(uint2 texel, uint texWidth, uint texHeight, float texelSizeWorld)
+	{
 		uint leftX = (texel.x == 0) ? 0 : texel.x - 1;
 		uint rightX = (texel.x == texWidth - 1) ? texel.x : texel.x + 1;
 		uint bottomY = (texel.y == 0) ? 0 : texel.y - 1;
 		uint topY = (texel.y == texHeight - 1) ? texel.y : texel.y + 1;
 		
-		float heightLeft = _HeightMap.Load(int3(leftX, texel.y, 0));
-		float heightRight = _HeightMap.Load(int3(rightX, texel.y, 0));
-		float heightBottom = _HeightMap.Load(int3(texel.x, bottomY, 0));
-		float heightTop = _HeightMap.Load(int3(texel.x, topY, 0));			
+		float heightLeft = _HeightMap.Load(int3(leftX, texel.y, 0)).r;
+		float heightRight = _HeightMap.Load(int3(rightX, texel.y, 0)).r;
+		float heightBottom = _HeightMap.Load(int3(texel.x, bottomY, 0)).r;
+		float heightTop = _HeightMap.Load(int3(texel.x, topY, 0)).r;
 
-		float dx = heightRight - heightLeft;
-		float dy = heightTop - heightBottom;
+		float dx = (heightRight - heightLeft) * terrainSize.x;
+		float dy = (heightTop - heightBottom) * terrainSize.x;
 
-		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
-
-		float dist = distance(cameraPosition, grassPosition);
-
-		float bladeHash = Hash12(worldXY);
-
-		const float endDistance = 10000;
-
-		if (dist > endDistance) return;
-
-		const float startDistance = 2000;
-
-		// As distance increases, more chance for threshold to fail.
-		float densityThreshold = 0.5 - saturate((dist - startDistance) / (endDistance - startDistance));
+		float horizontalDist = 2.0 * texelSizeWorld;
+		float slopeMagnitude = length(float2(dx, dy)) / horizontalDist;
 		
-		if (bladeHash > densityThreshold) return;
+		TerrainNormalData result;
+		result.Normal = normalize(float3(-dx, -dy, 2.0 * texelSizeWorld));
+		result.SlopeAngle = degrees(atan(slopeMagnitude));
+		
+		return result;
+	}
 
-        GrassData grassData;
+	float CalculateDensityThreshold(float dist)
+	{
+		const float startDistance = 2000;
+		const float endDistance = 10000;
+		return 0.5 - saturate((dist - startDistance) / (endDistance - startDistance));
+	}
 
-        grassData.Position   = grassPosition;
-        grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
-        grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
+	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
+	{
+		GrassData grassData;
+		grassData.Position   = grassPosition;
+		grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
+		grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
 		grassData.Stiffness  = Random(index * 12u, 0.2f, 1.0f);
-		grassData.Normal	 = normalize(float3(-dx, -dy, 2.0));
+		grassData.Normal	 = normal;
 		grassData.BladeHash  = bladeHash;
 		grassData.DistanceFromCamera = dist;
+		return grassData;
+	}
 
-		float lodTransitionDist = 1500.0;
-		float crossFadeRange = bladeHash * 2500.0f;
+	void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
+	{
+		const float lodTransitionDist = 1500.0;
+		const float crossFadeRange = bladeHash * 2500.0f;
 
 		if (dist < lodTransitionDist + crossFadeRange)
-		{						
+		{
 			grassHighLod.Append(grassData);
 		}
 		else
 		{
 			grassLowLod.Append(grassData);
 		}
+	}
 
+	[numthreads(64, 1, 1)]
+    void MainCs(uint3 id : SV_DispatchThreadID)
+    {
+        uint index = id.x;
+
+		uint chunksPerRow = (uint)sqrt(chunkCount);
+		float2 halfChunk = chunkSize * 0.5f;
+
+		float2 chunkOffset = GetChunkOffset(index, chunksPerRow, chunkSize, halfChunk);
+
+		float2 centerOfChunk = terrainPosition.xy + chunkOffset;
+
+		float2 worldXY = GetJitteredPosition(index, centerOfChunk, halfChunk);
+		
+		uint texWidth, texHeight;
+		_HeightMap.GetDimensions(texWidth, texHeight);
+
+		uint2 texel = WorldToTexel(worldXY, texWidth, texHeight);
+
+		float texelSizeWorld = terrainSize.x / (texWidth - 1);
+
+		float height = SampleHeight(texel);
+
+		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
+
+		if(!InsideCameraFrustrum(grassPosition)) return;
+
+		float dist = distance(cameraPosition, grassPosition);
+
+		const float endDistance = 20000;
+
+		if (dist > endDistance) return;
+
+		float bladeHash = Hash12(worldXY);
+
+		float densityThreshold = CalculateDensityThreshold(dist);
+
+		if (bladeHash > densityThreshold) return;
+
+		TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
+		
+		if(terrainData.SlopeAngle > 90.0) return;
+
+		GrassData grassData = CreateGrassData(index, grassPosition, terrainData.Normal, bladeHash, dist);
+
+		AppendToBuffer(grassData, dist, bladeHash);
     }
 }

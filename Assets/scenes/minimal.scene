@@ -244,8 +244,10 @@
           "__guid": "7e4eb1c6-c278-42d8-ac9d-e5e6b15602ff",
           "__enabled": true,
           "Flags": 0,
-          "chunkCount": 100,
+          "chunkCount": 200,
           "chunkSize": "500,500",
+          "clumpSize": 5,
+          "clumpStrength": 5,
           "grassCountPerChunk": 10000,
           "highLodGrassModel": "models/grass.vmdl",
           "lowLodGrassModel": "models/grasslod.vmdl",
@@ -326,7 +328,7 @@
           "Surface": null,
           "SurfaceVelocity": "0,0,0",
           "TerrainHeight": 5000,
-          "TerrainSize": 5000
+          "TerrainSize": 10000
         }
       ],
       "Children": []
@@ -336,7 +338,7 @@
       "__version": 2,
       "Flags": 0,
       "Name": "Player Controller",
-      "Position": "278.4074,237.1831,139.1027",
+      "Position": "278.4074,237.1831,1026.612",
       "Rotation": "0,0,0,1",
       "Scale": "1,1,1",
       "Tags": "",
@@ -406,7 +408,7 @@
           "RotationAngleLimit": 45,
           "RotationSpeed": 1,
           "RunByDefault": false,
-          "RunSpeed": 320,
+          "RunSpeed": 1000,
           "ShowColliderComponents": false,
           "ShowRigidbodyComponent": false,
           "ThirdPerson": true,
@@ -662,6 +664,52 @@
           "Children": []
         }
       ]
+    },
+    {
+      "__guid": "ce556a47-2f36-435d-8ce7-737fd2644135",
+      "__version": 2,
+      "Flags": 0,
+      "Name": "Cube",
+      "Position": "491.7401,24.38745,154.4909",
+      "Rotation": "0,0,0,1",
+      "Scale": "1,1,1",
+      "Tags": "",
+      "Enabled": true,
+      "NetworkMode": 2,
+      "NetworkFlags": 0,
+      "NetworkOrphaned": 0,
+      "NetworkTransmit": true,
+      "OwnerTransfer": 1,
+      "Components": [
+        {
+          "__type": "Sandbox.ModelRenderer",
+          "__guid": "4fcfa783-d334-41f4-97ee-c6ecb800ce91",
+          "__enabled": true,
+          "Flags": 0,
+          "BodyGroups": 18446744073709551615,
+          "CreateAttachments": false,
+          "LodOverride": null,
+          "MaterialGroup": null,
+          "MaterialOverride": null,
+          "Materials": null,
+          "Model": "models/dev/box.vmdl",
+          "OnComponentDestroy": null,
+          "OnComponentDisabled": null,
+          "OnComponentEnabled": null,
+          "OnComponentFixedUpdate": null,
+          "OnComponentStart": null,
+          "OnComponentUpdate": null,
+          "RenderOptions": {
+            "GameLayer": true,
+            "OverlayLayer": false,
+            "BloomLayer": false,
+            "AfterUILayer": false
+          },
+          "RenderType": "On",
+          "Tint": "1,1,1,1"
+        }
+      ],
+      "Children": []
     }
   ],
   "SceneProperties": {

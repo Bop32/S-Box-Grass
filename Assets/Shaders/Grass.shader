@@ -5,7 +5,6 @@ FEATURES
 MODES
 {
     Forward();
-    Depth();
 }
 COMMON
 {
@@ -51,18 +50,18 @@ VS
 
 	float CalculateWind(float3 grassPosition)
     {
-        const float flowScale = 0.02f;       // Controls size of wind patterns || Lower = bigger, smoother waves
+        const float flowScale = 0.02f;       // Controls size of wind patterns || Lower = bigger, and smoother waves
 
-        struct WindLayer
+        struct Wind
         {
             float Frequency;
             float Speed;
             float Weight;
         };
     
-        WindLayer gust    = { 0.5f, 1.2f, 0.3f };  // Quick, subtle ripples
-        WindLayer primary = { 0.2f, 0.6f, 0.7f };  // Main movement
-        WindLayer large   = { 0.05f, 0.5f, 0.5f }; // Slow, strong swaying
+        Wind gust    = { 0.5f, 1.2f, 0.3f };  // Quick, subtle ripples
+        Wind primary = { 0.2f, 0.6f, 0.7f };  // Main movement
+        Wind large   = { 0.05f, 0.5f, 0.5f }; // Slow, strong swaying
     
         float gustWind    = Simplex2D(grassPosition.xy * flowScale * gust.Frequency + g_flTime * gust.Speed);
         float primaryWind = Simplex2D(grassPosition.xy * flowScale * primary.Frequency + g_flTime * primary.Speed);
@@ -79,18 +78,25 @@ VS
         PixelInput o;
 
         float3 vertex = i.vPositionOs;
+
         const float maxBladeHeight = 28.3774f + 3.0f;
         float heightNorm = saturate(vertex.z / maxBladeHeight);
 
         float tipInfluence = heightNorm * heightNorm; 
         float randomVariation = grass.BladeHash;
 
+        float width = lerp(2.0, 1.0, heightNorm); 
+
+        vertex.x *= width * 1.7f;
+
         float randID = grass.BladeHash;
     
-        if(grass.DistanceFromCamera > 1500 + randID * 2500.0f)
+        float lodDistance = 1500 + randID * 2500.0f;
+
+        if(grass.DistanceFromCamera > lodDistance)
         {
-            float fat = saturate((grass.DistanceFromCamera - 1500.0) / (7000.0 - 1500.0));
-            vertex.x *= lerp(1.0, 5.0, fat);
+            float fat = saturate((grass.DistanceFromCamera - lodDistance) / (10000.0 - lodDistance));
+            vertex.x *= lerp(1.0, 25.0, fat);
         
             float cosR = cos(grass.Rotation);
             float sinR = sin(grass.Rotation);
@@ -166,16 +172,13 @@ PS
 	    float noise     = i.vVertexColor.b;
 	    float distance  = i.vVertexColor.a;
 	
-	    // Start transition earlier and make it longer
 	    float lodTransitionStart = 1.0; 
-	    float lodTransitionEnd   = 6000.0; 
+	    float lodTransitionEnd   = 7000.0; 
 	
 	    float normalizedDist = saturate((distance - lodTransitionStart) / (lodTransitionEnd - lodTransitionStart));
 	
-	    // Stronger dithering to break up banding
 	    float ditheredDist = saturate(normalizedDist + (noise - 0.5) * 0.3f);
 	
-	    // Use smootherstep for even smoother transition
 	    float blendMask = ditheredDist * ditheredDist * (3.0 - 2.0 * ditheredDist);
 	
 	    float random = frac(sin(variation * 12.9898) * 43758.5453);
@@ -187,9 +190,8 @@ PS
 	
 	    float3 nearColor = lerp(baseGrass, grassColorTip, noisyTip + tipAmount);
 	
-	    // Make far color less saturated to reduce contrast
 	    float3 averageBase = lerp(grassColorDark, grassColorLight, 0.5f);
-	    float3 farColor = lerp(averageBase, grassColorTip, 0.6f); // Reduced from 1.0
+	    float3 farColor = lerp(averageBase, grassColorTip, 0.6f);
 	
 	    float3 finalColor = lerp(nearColor, farColor, blendMask);
 	
