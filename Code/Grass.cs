@@ -121,9 +121,47 @@ public sealed class Grass : Component
 			float z = terrainWorldPosition.z + terrainHeight;
 
 			Vector3 chunkPosition = new Vector3( x, y, z );
-			DebugOverlay.Box( chunkPosition, new Vector3( chunkSize, terrainHeight * 2 ), Color.White );
+
+			Vector3 min = new Vector3(chunkPosition.x - chunkSize.x * 0.5f, chunkPosition.y - chunkSize.y * 0.5f, terrainWorldPosition.z);
+			Vector3 max = new Vector3(chunkPosition.x + chunkSize.x * 0.5f, chunkPosition.y + chunkSize.y * 0.5f, z);
+
+			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.White;
+
+			DebugOverlay.Box(new BBox(min, max), visibleColor );
 			//RenderSubChunks( chunkPosition, chunkSize, terrainHeight );
 		}
+	}
+
+	public bool AABBInsideFrustum( Vector3 min, Vector3 max, FrustumPlane[] frustumPlanes )
+	{
+		for ( int i = 0; i < 6; i++ )
+		{
+			Vector3 normal = frustumPlanes[i].Normal;
+
+			Vector3 positive = new Vector3( normal.x >= 0 ? max.x : min.x, normal.y >= 0 ? max.y : min.y, normal.z >= 0 ? max.z : min.z );
+
+			if ( Vector3.Dot( normal, positive ) - frustumPlanes[i].Distance < 0 ) return false;
+		}
+
+		return true;
+	}
+
+	private FrustumPlane[] GetCameraFrustum()
+	{
+		Frustum frustum = GameObject.GetComponent<CameraComponent>().GetFrustum();
+
+		FrustumPlane[] planes = new FrustumPlane[6];
+
+		const float shrinkAmount = 50.0f;
+
+		planes[0] = new FrustumPlane { Normal = frustum.RightPlane.Normal, Distance = frustum.RightPlane.Distance - shrinkAmount };
+		planes[1] = new FrustumPlane { Normal = frustum.LeftPlane.Normal, Distance = frustum.LeftPlane.Distance - shrinkAmount };
+		planes[2] = new FrustumPlane { Normal = frustum.TopPlane.Normal, Distance = frustum.TopPlane.Distance - shrinkAmount };
+		planes[3] = new FrustumPlane { Normal = frustum.BottomPlane.Normal, Distance = frustum.BottomPlane.Distance - shrinkAmount };
+		planes[4] = new FrustumPlane { Normal = frustum.NearPlane.Normal, Distance = frustum.NearPlane.Distance - shrinkAmount };
+		planes[5] = new FrustumPlane { Normal = frustum.FarPlane.Normal, Distance = frustum.FarPlane.Distance - shrinkAmount };
+
+		return planes;
 	}
 
 	private void RenderSubChunks( Vector3 chunkPosition, Vector2 chunkSize, float terrainHeight )

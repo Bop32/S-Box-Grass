@@ -190,11 +190,14 @@ CS
 
 	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
 	{
+		uint seed = index * 17u + uint(grassPosition.x * 19) + uint(grassPosition.y * 23);
+
+
 		GrassData grassData;
 		grassData.Position   = grassPosition;
-		grassData.Rotation   = Random(index * 17u, -2.0f * PI, 2.0f * PI);
-		grassData.BendAmount = Random(index * 23u, 0.1f, 0.35f);
-		grassData.Stiffness  = Random(index * 12u, 0.2f, 1.0f);
+		grassData.Rotation   = Random(seed * bladeHash, -2.0f * PI, 2.0f * PI);
+		grassData.BendAmount = Random(seed * bladeHash, 0.5, 1.5f);
+		grassData.Stiffness  = Random(seed * bladeHash, 0.2f, 1.0f);
 		grassData.Normal	 = normal;
 		grassData.BladeHash  = bladeHash;
 		grassData.DistanceFromCamera = dist;
@@ -203,7 +206,7 @@ CS
 
 	void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
 	{
-		const float lodTransitionDist = 2500 + bladeHash * 3000.0f;
+		const float lodTransitionDist = 1200 + bladeHash * 2000;
 
 		if (dist < lodTransitionDist)
 		{
@@ -215,16 +218,32 @@ CS
 		}
 	}
 
+	uint GetChunkIndex(uint index)
+	{
+		uint grassPerChunk = grassCount / totalChunks;
+		uint extraGrass = grassCount % totalChunks; 
+
+		uint chunkIndex;
+
+		if (index < grassPerChunk * extraGrass)
+		{
+			return index / grassPerChunk;
+		}
+
+		uint indexInRemaining = index - grassPerChunk * extraGrass;
+		return extraGrass + (indexInRemaining / grassPerChunk);
+	}
+
 	[numthreads(64, 1, 1)]
     void MainCs(uint3 id : SV_DispatchThreadID)
     {
-        uint index = id.x;
+		uint index = id.x;
 
-		if(index >= grassCount) return;
+		if(index > grassCount) return;
 
-		uint chunkIndex = min(index / grassPerChunk, totalChunks - 1);
+		ChunkData chunkData = chunkBuffer[GetChunkIndex(index)];
 
-		ChunkData chunkData = chunkBuffer[chunkIndex];
+		if(!chunkData.Visible) return;
 		
 		//float subHalfChunkSize = subChunkSize * 0.5f;
 
@@ -249,7 +268,7 @@ CS
 
 		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
 
-		if(!InsideCameraFrustrum(grassPosition)) return;
+		//if(!InsideCameraFrustrum(grassPosition)) return;
 
 		float dist = distance(cameraPosition, grassPosition);
 
@@ -261,7 +280,7 @@ CS
 
 		float densityThreshold = CalculateDensityThreshold(dist);
 
-		if (bladeHash > densityThreshold) return;
+		//if (bladeHash > densityThreshold) return;
 
 		TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
 		

@@ -90,7 +90,7 @@ VS
         vertex.x *= width * 1.7f;
         float randID = grass.BladeHash;
     
-        float lodDistance = 1500 + randID * 2500.0f;
+        float lodDistance = 1200 + randID * 2000.0f;
 
         if(grass.DistanceFromCamera > lodDistance)
         {
@@ -128,9 +128,8 @@ VS
             return o;
         }
 
-        float curve = sin(heightNorm * heightNorm * 3.14159 * 0.4f);
-        float bendPower = 3.0f;
-        vertex.y += curve * 5.0 * bendPower;  
+        float bendFalloff = pow(tipInfluence, 1.5); 
+        vertex.y += bendFalloff * grass.BendAmount * 20;
 
         float cosR = cos(grass.Rotation);
         float sinR = sin(grass.Rotation);
@@ -150,7 +149,7 @@ VS
         // Hard coded for now 
         float3 windDirection = float3(1.0, 0.5f, 0.0);
     
-        float wind = CalculateWind(grass.Position);
+        float wind = 0;//CalculateWind(grass.Position);
         const float windStrength = 10.0;
     
         float flexibility = 1.0 - grass.Stiffness;

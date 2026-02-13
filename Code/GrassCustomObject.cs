@@ -5,6 +5,12 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using static Sandbox.VertexLayout;
 
+public struct FrustumPlane
+{
+	public Vector3 Normal;
+	public float Distance;
+};
+
 public sealed class GrassCustomObject : SceneCustomObject
 {
 	struct GrassData
@@ -27,12 +33,6 @@ public sealed class GrassCustomObject : SceneCustomObject
 			BladeHash = 0;
 			DistanceFromCamera = 0;
 		}
-	};
-
-	struct FrustumPlane
-	{
-		public Vector3 Normal;
-		public float Distance;
 	};
 
 	public struct IndirectCommand
@@ -62,6 +62,23 @@ public sealed class GrassCustomObject : SceneCustomObject
 		}
 	}
 
+	struct SubChunkData
+	{
+		public Vector2 Min;
+		public Vector2 Max;
+
+		public int ParentChunkIndex;
+		public int Visible;
+
+		public SubChunkData()
+		{
+			Min = 0;
+			Max = 0;
+			ParentChunkIndex = 0;
+			Visible = 0;
+		}
+	};
+
 
 	private Grass grassSettings;
 
@@ -69,10 +86,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 	private ComputeShader chunkComputeShader;
 
+	private ComputeShader subChunkComputeShader;
+
 	private GpuBuffer<GrassData> grassGpuBufferHighLod;
 	private GpuBuffer<GrassData> grassGpuBufferLowLod;
 
 	private GpuBuffer<ChunkData> chunkGpuBuffer;
+	private GpuBuffer<SubChunkData> subChunkGpuBuffer;
 
 	private int totalGrassCount = 0;
 
@@ -101,9 +121,11 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassGpuBufferLowLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferLowLOD" );
 
 		chunkGpuBuffer = new GpuBuffer<ChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow, GpuBuffer.UsageFlags.Structured, "ChunkData" );
+		subChunkGpuBuffer = new GpuBuffer<SubChunkData>(grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData");
 
 		SetupGrassComputeAttributes();
 		SetupChunkComputeAttributes();
+		SetupSubChunkComputeAttributes();
 
 		grassData = new GrassData[totalGrassCount];
 		grassGpuBufferHighLod.SetData( grassData );
@@ -144,7 +166,19 @@ public sealed class GrassCustomObject : SceneCustomObject
 		chunkComputeShader.Attributes.Set( "WorldChunksSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow );
 		chunkComputeShader.Attributes.Set( "WorldChunksPerRow", grassSettings.WorldChunksPerRow );
 		chunkComputeShader.Attributes.Set( "MaximumUsableChunks", grassSettings.MaxNumberOfUsableChunks );
+		chunkComputeShader.Attributes.Set( "_HeightMap", grassSettings.Terrain.HeightMap);
+		chunkComputeShader.Attributes.Set( "TerrainPosition", grassSettings.Terrain.WorldPosition);
+		chunkComputeShader.Attributes.Set( "TerrainSize", new Vector2( grassSettings.Terrain.TerrainSize, grassSettings.Terrain.TerrainHeight ) );
 		chunkComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
+	}
+
+	private void SetupSubChunkComputeAttributes()
+	{
+		subChunkComputeShader = new ComputeShader( "shaders/SubChunk.Compute.shader" );
+
+		subChunkComputeShader.Attributes.Set( "WorldChunkCount", chunkGpuBuffer.ElementCount);
+		subChunkComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
+		subChunkComputeShader.Attributes.Set( "SubChunkData", subChunkGpuBuffer );
 	}
 
 	public override void RenderSceneObject()
@@ -154,15 +188,19 @@ public sealed class GrassCustomObject : SceneCustomObject
 		commandList.Reset();
 		camera.ClearCommandLists();
 
-		chunkComputeShader.Attributes.SetData( "FrustumPlanes", GetCameraFrustum() );
+		FrustumPlane[] cameraFrustum = GetCameraFrustum();
+
+		chunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 
 		chunkComputeShader.Dispatch(grassSettings.WorldChunksPerRow, 1, 1);
+
+		//subChunkComputeShader.Dispatch( subChunkGpuBuffer.ElementCount, 1, 1 );
 
 		grassGpuBufferHighLod.SetCounterValue( 0 );
 		grassGpuBufferLowLod.SetCounterValue( 0 );
 
 		grassComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
-		grassComputeShader.Attributes.SetData( "FrustumPlanes", GetCameraFrustum() );
+		grassComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 		grassComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
 
 		grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
