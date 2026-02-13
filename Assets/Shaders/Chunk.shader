@@ -28,15 +28,14 @@ CS
 	};
 
 	float worldChunkSize < Attribute("WorldChunksSize"); >;
+
 	int worldChunkPerRow < Attribute("WorldChunksPerRow"); >;
 
 	int maximumNumberOfUsableChunks <Attribute("MaximumUsableChunks"); >;
 
-	int grassCount <Attribute("GrassCount"); >;
-
 	RWStructuredBuffer<ChunkData> chunkData <Attribute("ChunkData"); >;
 
-	float2 GetWorldChunkOffset(uint index, uint grassPerChunk, uint currentChunkIndex, float2 halfChunk)
+	float2 GetWorldChunkOffset(uint currentChunkIndex, float2 halfChunk)
 	{
 		uint chunkIndexX = currentChunkIndex % worldChunkPerRow;
 		uint chunkIndexY = currentChunkIndex / worldChunkPerRow;
@@ -59,11 +58,11 @@ CS
 	{
 		uint index = id.x;
 
-		uint grassPerChunk = grassCount / worldChunkPerRow; 
+		if(index >= worldChunkPerRow) return;
 
 		ChunkData chunkDataTmp;
 
-		chunkDataTmp.Position = GetWorldChunkOffset(index, grassPerChunk, index, worldChunkSize * 0.5);
+		chunkDataTmp.Position = GetWorldChunkOffset(index, worldChunkSize * 0.5);
 		chunkDataTmp.ChunkIndex = index;
 		chunkDataTmp.Free = index > maximumNumberOfUsableChunks;
 		chunkDataTmp.Size = worldChunkSize;

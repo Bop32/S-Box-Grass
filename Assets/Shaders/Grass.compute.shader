@@ -72,21 +72,25 @@ CS
 		return minVal + Hash(seed) * (maxVal - minVal);
 	}
 
-	float2 GetClumpOffset(float2 worldPos, uint seed)
+	float2 GetClumpOffset(float2 worldPos, ChunkData chunkData)
 	{
+		float clumpSize = 2; 
+		float clumpStrength = 0.35;
+
 		float2 clumpCell = floor(worldPos / clumpSize);
-    
-		float clumpHash = HashXY(clumpCell.x * 73.0f, clumpCell.y * 149.0f) * Hash(seed);
-		float2 clumpCenterOffset = float2(frac(clumpHash * 12.9898f),frac(clumpHash * 78.233f)) * clumpSize;
-    
-		float2 clumpCenter = clumpCell * clumpSize + clumpCenterOffset;
-    
+
+		float h = HashXY(clumpCell.x, clumpCell.y);
+
+		float2 centerOffset = float2(frac(h * 12.9898), frac(h * 78.233)) * clumpSize;
+
+		float2 clumpCenter = clumpCell * clumpSize + centerOffset;
+
 		float2 toClump = clumpCenter - worldPos;
-		float distToClump = length(toClump);
-    
-		float falloff = saturate(1.0 - (distToClump / (clumpSize * 0.5f)));
-		falloff = falloff * falloff; 
-    
+
+		float dist = length(toClump);
+
+		float falloff = smoothstep(clumpSize, 0.0, dist);
+
 		return toClump * clumpStrength * falloff;
 	}
 
@@ -117,21 +121,22 @@ CS
 	
 	int grassPerChunk < Attribute("grassPerChunk"); >;
 
-	float subChunkSize < Attribute("SubChunksSize"); >;
-	int subChunksPerRow < Attribute("SubChunksPerRow"); >;
+	int totalChunks < Attribute("TotalWorldChunks"); >;
 
 	float2 terrainSize <Attribute("TerrainSize"); >;
 	
-	float clumpStrength < Attribute("ClumpStrength"); Default(0.3f); >;
+	//float clumpStrength < Attribute("ClumpStrength"); Default(0.3f); >;
 	
-	float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
+	//float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
 
-	float2 GetJitteredPosition(uint index, float2 centerOfChunk, float2 halfChunk)
+	float2 GetJitteredPosition(uint index, float2 centerOfChunk, ChunkData chunkData)
 	{
-		float jitterX = Random(index * 13u + time, -halfChunk.x, halfChunk.x);
-		float jitterY = Random(index * 31u + time, -halfChunk.y, halfChunk.y);
+		float2 halfChunk = chunkData.Size * 0.5;
+
+		float jitterX = Random(index * 13u, -halfChunk.x, halfChunk.x);
+		float jitterY = Random(index * 31u, -halfChunk.y, halfChunk.y);
 		float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
-		return worldXY + GetClumpOffset(centerOfChunk, index);
+		return worldXY + GetClumpOffset(worldXY, chunkData);
 	}
 
 	uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
@@ -217,10 +222,10 @@ CS
 
 		if(index >= grassCount) return;
 
-		uint chunkIndex = index / grassPerChunk;
+		uint chunkIndex = min(index / grassPerChunk, totalChunks - 1);
 
-		ChunkData chunkData = chunkBuffer[chunkIndex]; 
-
+		ChunkData chunkData = chunkBuffer[chunkIndex];
+		
 		//float subHalfChunkSize = subChunkSize * 0.5f;
 
 		//float2 subChunkOffset = GetSubChunkOffset(index, subHalfChunkSize);
@@ -231,9 +236,7 @@ CS
 
 		float2 centerOfChunk = terrainPosition.xy + chunkData.Position;
 
-		float2 worldXY = GetJitteredPosition(index, centerOfChunk, chunkData.Size * 0.5);
-		
-		worldXY += GetClumpOffset(worldXY, index);
+		float2 worldXY = GetJitteredPosition(index, centerOfChunk, chunkData	);
 
 		uint texWidth, texHeight;
 		_HeightMap.GetDimensions(texWidth, texHeight);

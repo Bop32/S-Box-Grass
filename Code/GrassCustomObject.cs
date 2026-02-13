@@ -128,8 +128,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		grassComputeShader.Attributes.Set( "GrassPerChunk",  grassSettings.GrassCountPerChunk / grassSettings.WorldChunksPerRow);
 
-		grassComputeShader.Attributes.Set( "SubChunksSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow / grassSettings.SubChunksPerRow );
-		grassComputeShader.Attributes.Set( "SubChunksPerRow", grassSettings.SubChunksPerRow );
+		grassComputeShader.Attributes.Set( "TotalWorldChunks", grassSettings.WorldChunksPerRow);
 
 		grassComputeShader.Attributes.Set( "ClumpStrength", grassSettings.ClumpStrength );
 		grassComputeShader.Attributes.Set( "ClumpSize", grassSettings.ClumpSize );
@@ -144,7 +143,6 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		chunkComputeShader.Attributes.Set( "WorldChunksSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow );
 		chunkComputeShader.Attributes.Set( "WorldChunksPerRow", grassSettings.WorldChunksPerRow );
-		chunkComputeShader.Attributes.Set( "GrassCount", totalGrassCount );
 		chunkComputeShader.Attributes.Set( "MaximumUsableChunks", grassSettings.MaxNumberOfUsableChunks );
 		chunkComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
 	}
@@ -175,7 +173,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		//RenderDebugText();
+		RenderDebugText();
 
 		//DebugOverlaySystem.Current.Texture( terrain.HeightMap, new Rect( 0, 0, 128, 128 ) );
 	}

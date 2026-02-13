@@ -85,10 +85,9 @@ VS
         float tipInfluence = heightNorm * heightNorm; 
         float randomVariation = grass.BladeHash;
 
-        float width = lerp(3.0, 1.0, heightNorm); 
+        float width = lerp(2.0, 1.0, heightNorm); 
 
         vertex.x *= width * 1.7f;
-
         float randID = grass.BladeHash;
     
         float lodDistance = 1500 + randID * 2500.0f;
@@ -96,7 +95,7 @@ VS
         if(grass.DistanceFromCamera > lodDistance)
         {
             float fat = saturate((grass.DistanceFromCamera - lodDistance) / (10000.0 - lodDistance));
-            vertex.x *= lerp(1.0, 10.0, fat);
+            vertex.x *= lerp(1.0, 5.0, fat);
             
             float cosR = cos(grass.Rotation);
             float sinR = sin(grass.Rotation);
@@ -119,7 +118,7 @@ VS
             float billboardFactor = smoothstep(1500, 10000, grass.DistanceFromCamera);
 
             float3 finalTangent   = lerp(surfaceTangent, right, billboardFactor);
-            float3 finalBitangent = lerp(surfaceBitangent, toCamera, billboardFactor);
+            float3 finalBitangent = lerp(surfaceBitangent, cameraDirection, billboardFactor);
             float3 finalNormal    = lerp(surfaceNormal, up, billboardFactor);
 
             float3 worldVertex = rotatedVertex.x * finalTangent + rotatedVertex.y * finalBitangent + rotatedVertex.z * finalNormal;
