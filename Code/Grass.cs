@@ -1,5 +1,6 @@
 
 using System;
+using System.Runtime.InteropServices;
 using System.Transactions;
 
 
@@ -8,8 +9,10 @@ public struct GrassSettings
 	public Model HighLodGrassModel { get; set; }
 	public Model LowLodGrassModel { get; set; }
 	public Terrain Terrain { get; set; }
+	public int WorldChunksPerRow { get; set; }
+	public int SubChunksPerRow { get; set; }
+	public int MaxNumberOfUsableChunks { get; set; }
 	public int GrassCountPerChunk { get; set; }
-	public int ChunkCount { get; set; }
 	public Vector2 ChunkSize { get; set; }
 	public float ClumpStrength { get; set; }
 	public float ClumpSize { get; set; }
@@ -19,85 +22,137 @@ public sealed class Grass : Component
 {
 
 	[Property]
-	private readonly Model highLodGrassModel = null;
+	public readonly Model HighLodGrassModel = null;
 
 	[Property]
-	private readonly Model lowLodGrassModel = null;
+	public readonly Model LowLodGrassModel = null;
 
 	[Property]
-	private readonly Terrain terrain = null;
+	public readonly Terrain Terrain = null;
+
+	[Header( "World Chunks" )]
 
 	[Property]
-	public int grassCountPerChunk = 0;
+	public int WorldChunksPerRow { get; set; }
 
 	[Property]
-	public int chunkCount = 0;
+	public int SubChunksPerRow { get; set; }
 
 	[Property]
-	public Vector2 chunkSize = Vector2.Zero;
+	public int MaxNumberOfUsableChunks { get; set; } = 4;
 
 	[Property]
-	private readonly float clumpStrength = 5.0f;
+	public int GrassCountPerChunk { get; set; }
 
 	[Property]
-	private readonly float clumpSize = 5.0f;
+	public float ClumpStrength { get; set; } = 5.0f;
+
+	[Property]
+	public float ClumpSize { get; set; } = 5.0f;
 
 	GrassCustomObject grass;
 
 	protected override void OnAwake()
 	{
 		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>() );
+
+		//SimulateChunks();
 	}
 
 	public GrassSettings GetSettings()
 	{
 		return new GrassSettings
 		{
-			HighLodGrassModel = highLodGrassModel,
-			LowLodGrassModel = lowLodGrassModel,
-			Terrain = terrain,
+			HighLodGrassModel = HighLodGrassModel,
+			LowLodGrassModel = LowLodGrassModel,
+			Terrain = Terrain,
 
-			GrassCountPerChunk = grassCountPerChunk,
-			ChunkCount = chunkCount,
-			ChunkSize = chunkSize,
+			GrassCountPerChunk = GrassCountPerChunk,
+			SubChunksPerRow = SubChunksPerRow,
+			WorldChunksPerRow = WorldChunksPerRow,
+			MaxNumberOfUsableChunks = MaxNumberOfUsableChunks,
 
-			ClumpStrength = clumpStrength,
-			ClumpSize = clumpSize
+			ClumpStrength = ClumpStrength,
+			ClumpSize = ClumpSize
 		};
 	}
 
-	//protected override void DrawGizmos()
-	//{
-	//	float terrainSize = terrain.TerrainSize;
-	//	float terrainHeight = terrain.TerrainHeight;
+	private void SimulateChunks()
+	{
+		int grassPerChunk = GrassCountPerChunk / WorldChunksPerRow;  // 100 / 8 => 12
 
-	//	int chunksPerRow = 8;
-	//	Vector2 chunkSize = new Vector2( terrainSize / chunksPerRow );
+		Log.Info( SubChunksPerRow );
 
-	//	Vector3 terrainWorldPosition = terrain.WorldPosition;
+		int grassPerSubChunk = (grassPerChunk / SubChunksPerRow) + 1;   // 12 / 2 => 6
 
-	//	for ( int i = 0; i < chunksPerRow * chunksPerRow; i++ )
-	//	{
-	//		int offsetX = i % chunksPerRow;
-	//		int offsetY = i / chunksPerRow;
+		for ( int i = 0; i < GrassCountPerChunk; i++ )
+		{
+			int currentChunk = i / grassPerChunk;
+			int localIndexInChunk = i % grassPerChunk;
 
-	//		float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize.x;
-	//		float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize.y;
-	//		float z = terrainWorldPosition.z + terrainHeight;
+			int currentSubChunk = localIndexInChunk / grassPerSubChunk;
 
-	//		Vector3 chunkPosition = new Vector3( x, y, z );
-	//		DebugOverlay.Box( chunkPosition, new Vector3( chunkSize, terrainHeight * 2 ), Color.Cyan );
-	//	}
+			Log.Info( $"Grass: `{i}` is in chunk: {currentChunk} and is in subchunk: `{currentSubChunk}`" );
 
-	//}
+		}
+	}
+
+	protected override void DrawGizmos()
+	{
+		RenderChunks();
+	}
+
+	private void RenderChunks()
+	{
+		float terrainSize = Terrain.TerrainSize;
+		float terrainHeight = Terrain.TerrainHeight;
+
+		Vector2 chunkSize = new Vector2( terrainSize / WorldChunksPerRow );
+
+		Vector3 terrainWorldPosition = Terrain.WorldPosition;
+
+		for ( int i = 0; i < WorldChunksPerRow * WorldChunksPerRow; i++ )
+		{
+			int offsetX = i % WorldChunksPerRow;
+			int offsetY = i / WorldChunksPerRow;
+
+			float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize.x;
+			float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize.y;
+			float z = terrainWorldPosition.z + terrainHeight;
+
+			Vector3 chunkPosition = new Vector3( x, y, z );
+			DebugOverlay.Box( chunkPosition, new Vector3( chunkSize, terrainHeight * 2 ), Color.White );
+			//RenderSubChunks( chunkPosition, chunkSize, terrainHeight );
+		}
+	}
+
+	private void RenderSubChunks( Vector3 chunkPosition, Vector2 chunkSize, float terrainHeight )
+	{
+		Vector2 subChunkSize = new Vector2( chunkSize / SubChunksPerRow );
+
+		Vector3 startSubChunkPosition = new Vector3( chunkPosition.x - chunkSize.x / 2, chunkPosition.y - chunkSize.y / 2, chunkPosition.z );
+
+		for ( int i = 0; i < SubChunksPerRow * SubChunksPerRow; i++ )
+		{
+			int offsetX = i % SubChunksPerRow;
+			int offsetY = i / SubChunksPerRow;
+
+			float x = startSubChunkPosition.x + (offsetX + 0.5f) * subChunkSize.x;
+			float y = startSubChunkPosition.y + (offsetY + 0.5f) * subChunkSize.y;
+			float z = startSubChunkPosition.z;
+
+			Vector3 subChunkPosition = new Vector3( x, y, z );
+			DebugOverlay.Box( subChunkPosition, new Vector3( subChunkSize - 5, terrainHeight * 2 ), Color.Cyan );
+		}
+	}
 
 	protected override void OnDestroy()
 	{
-		grass.DestroyBuffers();
+		grass?.DestroyBuffers();
 	}
 
 	protected override void OnDisabled()
 	{
-		grass.DestroyBuffers();
+		grass?.DestroyBuffers();
 	}
 }

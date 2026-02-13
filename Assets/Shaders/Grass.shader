@@ -85,7 +85,7 @@ VS
         float tipInfluence = heightNorm * heightNorm; 
         float randomVariation = grass.BladeHash;
 
-        float width = lerp(2.0, 1.0, heightNorm); 
+        float width = lerp(3.0, 1.0, heightNorm); 
 
         vertex.x *= width * 1.7f;
 
@@ -96,11 +96,16 @@ VS
         if(grass.DistanceFromCamera > lodDistance)
         {
             float fat = saturate((grass.DistanceFromCamera - lodDistance) / (10000.0 - lodDistance));
-            vertex.x *= lerp(1.0, 25.0, fat);
-        
+            vertex.x *= lerp(1.0, 10.0, fat);
+            
             float cosR = cos(grass.Rotation);
             float sinR = sin(grass.Rotation);
         
+            float3 cameraDirection = normalize(cameraPosition - grass.Position);
+    
+            float3 right = float3(-cameraDirection.y, cameraDirection.x, 0);
+            float3 up = float3(0, 0, 1);
+
             float3 rotatedVertex;
             rotatedVertex.x = vertex.x * cosR - vertex.y * sinR;
             rotatedVertex.y = vertex.x * sinR + vertex.y * cosR;
@@ -111,7 +116,13 @@ VS
             float3 surfaceTangent = normalize(cross(axis, surfaceNormal));
             float3 surfaceBitangent = cross(surfaceNormal, surfaceTangent);
         
-            float3 worldVertex = rotatedVertex.x * surfaceTangent + rotatedVertex.y * surfaceBitangent + rotatedVertex.z * surfaceNormal;
+            float billboardFactor = smoothstep(1500, 10000, grass.DistanceFromCamera);
+
+            float3 finalTangent   = lerp(surfaceTangent, right, billboardFactor);
+            float3 finalBitangent = lerp(surfaceBitangent, toCamera, billboardFactor);
+            float3 finalNormal    = lerp(surfaceNormal, up, billboardFactor);
+
+            float3 worldVertex = rotatedVertex.x * finalTangent + rotatedVertex.y * finalBitangent + rotatedVertex.z * finalNormal;
 
             o.vPositionPs = Position3WsToPs( grass.Position + worldVertex );
             o.vVertexColor = float4(randomVariation, tipInfluence, tipInfluence, grass.DistanceFromCamera);
@@ -172,12 +183,12 @@ PS
 	    float noise     = i.vVertexColor.b;
 	    float distance  = i.vVertexColor.a;
 	
-	    float lodTransitionStart = 1.0; 
-	    float lodTransitionEnd   = 7000.0; 
+	    float lodTransitionStart = 1500.0; 
+	    float lodTransitionEnd   = 10000.0; 
 	
 	    float normalizedDist = saturate((distance - lodTransitionStart) / (lodTransitionEnd - lodTransitionStart));
 	
-	    float ditheredDist = saturate(normalizedDist + (noise - 0.5) * 0.3f);
+	    float ditheredDist = saturate(normalizedDist + (noise - 0.5) * 0.25f);
 	
 	    float blendMask = ditheredDist * ditheredDist * (3.0 - 2.0 * ditheredDist);
 	
@@ -186,12 +197,12 @@ PS
 	
 	    float yellowStrength = smoothstep(0.1, 0.8, random);
 	    float tipAmount = saturate(height * height) * yellowStrength;
-	    float noisyTip = tipAmount * lerp(0.1, 0.8, noise);
+	    float noisyTip = tipAmount * lerp(0.1, 0.90, noise);
 	
 	    float3 nearColor = lerp(baseGrass, grassColorTip, noisyTip + tipAmount);
 	
 	    float3 averageBase = lerp(grassColorDark, grassColorLight, 0.5f);
-	    float3 farColor = lerp(averageBase, grassColorTip, 0.6f);
+	    float3 farColor = lerp(averageBase, grassColorTip, 0.2f);
 	
 	    float3 finalColor = lerp(nearColor, farColor, blendMask);
 	

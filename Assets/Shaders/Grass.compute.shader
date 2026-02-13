@@ -17,6 +17,15 @@ CS
 		float BladeHash;
 		float DistanceFromCamera;
 	};		
+
+	struct ChunkData
+	{
+		float2 Position;
+		float Size;
+		int ChunkIndex;
+		int Visible;
+		int Free;
+	};
 	
 	struct FrustumPlane
 	{
@@ -67,7 +76,7 @@ CS
 	{
 		float2 clumpCell = floor(worldPos / clumpSize);
     
-		float clumpHash = HashXY(clumpCell.x * 73.0f, clumpCell.y * 149.0f);
+		float clumpHash = HashXY(clumpCell.x * 73.0f, clumpCell.y * 149.0f) * Hash(seed);
 		float2 clumpCenterOffset = float2(frac(clumpHash * 12.9898f),frac(clumpHash * 78.233f)) * clumpSize;
     
 		float2 clumpCenter = clumpCell * clumpSize + clumpCenterOffset;
@@ -94,6 +103,8 @@ CS
 	AppendStructuredBuffer<GrassData> grassHighLod < Attribute( "GrassHighLodData" ); >;
 	AppendStructuredBuffer<GrassData> grassLowLod < Attribute( "GrassLowLodData" ); >;
 
+	RWStructuredBuffer<ChunkData> chunkBuffer <Attribute("ChunkData"); >;
+
 	Texture2D<float> _HeightMap <Attribute("HeightMap"); >;
 
 	int grassCount <Attribute("GrassCount"); >;
@@ -104,26 +115,16 @@ CS
 	
 	float3 cameraPosition < Attribute("CameraPosition"); >;
 	
-	float2 chunkSize < Attribute("ChunkSize"); >;
-	
-	int chunkCount < Attribute("ChunkCount"); >;
-	
+	int grassPerChunk < Attribute("grassPerChunk"); >;
+
+	float subChunkSize < Attribute("SubChunksSize"); >;
+	int subChunksPerRow < Attribute("SubChunksPerRow"); >;
+
 	float2 terrainSize <Attribute("TerrainSize"); >;
 	
 	float clumpStrength < Attribute("ClumpStrength"); Default(0.3f); >;
 	
 	float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
-
-
-	float2 GetChunkOffset(uint index, uint chunksPerRow, float2 chunkSize, float2 halfChunk)
-	{
-		uint grassPerChunk = grassCount / chunkCount;
-		uint chunkIndex = index / grassPerChunk;
-		uint chunkIndexX = chunkIndex % chunksPerRow;
-		uint chunkIndexY = chunkIndex / chunksPerRow;
-		
-		return float2(chunkIndexX * chunkSize.x, chunkIndexY * chunkSize.y) + halfChunk;
-	}
 
 	float2 GetJitteredPosition(uint index, float2 centerOfChunk, float2 halfChunk)
 	{
@@ -140,7 +141,7 @@ CS
 	}
 
 	float SampleHeight(uint2 texel)
-	{
+	{																				  
 		return _HeightMap.Load(int3(texel.x, texel.y, 0)).r * terrainSize.y;
 	}
 
@@ -177,9 +178,9 @@ CS
 
 	float CalculateDensityThreshold(float dist)
 	{
-		const float startDistance = 2000;
+		const float startDistance = 1500;
 		const float endDistance = 10000;
-		return 0.5 - saturate((dist - startDistance) / (endDistance - startDistance));
+		return 1.0 - saturate((dist - startDistance) / (endDistance - startDistance));
 	}
 
 	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
@@ -197,10 +198,9 @@ CS
 
 	void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
 	{
-		const float lodTransitionDist = 1500.0;
-		const float crossFadeRange = bladeHash * 2500.0f;
+		const float lodTransitionDist = 2500 + bladeHash * 3000.0f;
 
-		if (dist < lodTransitionDist + crossFadeRange)
+		if (dist < lodTransitionDist)
 		{
 			grassHighLod.Append(grassData);
 		}
@@ -215,15 +215,26 @@ CS
     {
         uint index = id.x;
 
-		uint chunksPerRow = (uint)sqrt(chunkCount);
-		float2 halfChunk = chunkSize * 0.5f;
+		if(index >= grassCount) return;
 
-		float2 chunkOffset = GetChunkOffset(index, chunksPerRow, chunkSize, halfChunk);
+		uint chunkIndex = index / grassPerChunk;
 
-		float2 centerOfChunk = terrainPosition.xy + chunkOffset;
+		ChunkData chunkData = chunkBuffer[chunkIndex]; 
 
-		float2 worldXY = GetJitteredPosition(index, centerOfChunk, halfChunk);
+		//float subHalfChunkSize = subChunkSize * 0.5f;
+
+		//float2 subChunkOffset = GetSubChunkOffset(index, subHalfChunkSize);
+
+		//float2 halfChunk = chunkSize * 0.5f;
+
+		//float2 chunkOffset = GetChunkOffset(index, chunksPerRow, chunkSize, halfChunk);
+
+		float2 centerOfChunk = terrainPosition.xy + chunkData.Position;
+
+		float2 worldXY = GetJitteredPosition(index, centerOfChunk, chunkData.Size * 0.5);
 		
+		worldXY += GetClumpOffset(worldXY, index);
+
 		uint texWidth, texHeight;
 		_HeightMap.GetDimensions(texWidth, texHeight);
 
