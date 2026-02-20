@@ -11,7 +11,6 @@ CS
 	{
 		float2 Position;
 		float Size;
-		int ChunkIndex;
 		int Visible;
 		int Free;
 	};
@@ -40,12 +39,12 @@ CS
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
 
 
-	float2 GetWorldChunkOffset(uint currentChunkIndex, float2 halfChunk)
+	float2 GetWorldChunkOffset(uint currentChunkIndex)
 	{
 		uint chunkIndexX = currentChunkIndex % worldChunkPerRow;
 		uint chunkIndexY = currentChunkIndex / worldChunkPerRow;
 		
-		return float2(chunkIndexX * worldChunkSize, chunkIndexY * worldChunkSize) + halfChunk;
+		return float2(chunkIndexX * worldChunkSize, chunkIndexY * worldChunkSize) + (worldChunkSize * 0.5f);
 	}
 
 	bool AABBInsideFrustum(float3 min, float3 max)
@@ -68,14 +67,12 @@ CS
 	{
 		uint index = id.x;
 
-		if(index >= worldChunkPerRow) return;
-
-		float halfChunk = worldChunkSize * 0.5f;
-
-		float2 position = GetWorldChunkOffset(index, halfChunk);
+		float2 position = terrainPosition.xy + GetWorldChunkOffset(index);
 
 		float minZ = terrainPosition.z;
 		float maxZ = terrainPosition.z + terrainSize.y;
+
+		float2 halfChunk = worldChunkSize * 0.5f;
 
 		float2 minXY = position - halfChunk;
 		float2 maxXY = position + halfChunk;
@@ -84,12 +81,11 @@ CS
 		float3 max = float3(maxXY, maxZ); 
 
 		ChunkData chunkDataTmp;
-
-		chunkDataTmp.Position = GetWorldChunkOffset(index, halfChunk);
-		chunkDataTmp.ChunkIndex = index;
+		
+		chunkDataTmp.Position = position;
 		chunkDataTmp.Free = index > maximumNumberOfUsableChunks;
 		chunkDataTmp.Size = worldChunkSize;
-		chunkDataTmp.Visible = AABBInsideFrustum(min, max);
+		chunkDataTmp.Visible = true;//AABBInsideFrustum(min, max);
 		chunkData[index] = chunkDataTmp;
-	}	
+	}
 }

@@ -149,7 +149,7 @@ VS
         // Hard coded for now 
         float3 windDirection = float3(1.0, 0.5f, 0.0);
     
-        float wind = 0;//CalculateWind(grass.Position);
+        float wind = CalculateWind(grass.Position);
         const float windStrength = 10.0;
     
         float flexibility = 1.0 - grass.Stiffness;

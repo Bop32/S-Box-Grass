@@ -22,9 +22,17 @@ CS
 	{
 		float2 Position;
 		float Size;
-		int ChunkIndex;
 		int Visible;
 		int Free;
+	};
+
+	struct SubChunkData
+	{
+		float2 Position;
+		float Size;
+
+		int ParentChunkIndex;
+		int Visible;
 	};
 	
 	struct FrustumPlane
@@ -108,6 +116,9 @@ CS
 	AppendStructuredBuffer<GrassData> grassLowLod < Attribute( "GrassLowLodData" ); >;
 
 	RWStructuredBuffer<ChunkData> chunkBuffer <Attribute("ChunkData"); >;
+	RWStructuredBuffer<SubChunkData> subChunkBuffer <Attribute("SubChunkData"); >;
+
+	int subChunkCountPerChunk <Attribute("SubChunkCountPerChunk"); >;
 
 	Texture2D<float> _HeightMap <Attribute("HeightMap"); >;
 
@@ -129,14 +140,16 @@ CS
 	
 	//float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
 
-	float2 GetJitteredPosition(uint index, float2 centerOfChunk, ChunkData chunkData)
+	float2 GetJitteredPosition(uint index, float2 centerOfChunk, float chunkSize)
 	{
-		float2 halfChunk = chunkData.Size * 0.5;
+		float halfChunk = chunkSize * 0.5;
 
-		float jitterX = Random(index * 13u, -halfChunk.x, halfChunk.x);
-		float jitterY = Random(index * 31u, -halfChunk.y, halfChunk.y);
+		float jitterX = Random(index * 13u, -halfChunk, halfChunk);
+		float jitterY = Random(index * 31u, -halfChunk, halfChunk);
 		float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
-		return worldXY + GetClumpOffset(worldXY, chunkData);
+		//return worldXY + GetClumpOffset(worldXY, chunkData);
+
+		return worldXY;
 	}
 
 	uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
@@ -218,21 +231,38 @@ CS
 		}
 	}
 
-	uint GetChunkIndex(uint index)
+	struct DistributionResult
 	{
-		uint grassPerChunk = grassCount / totalChunks;
-		uint extraGrass = grassCount % totalChunks; 
+		uint GroupIndex;
+		uint LocalIndex;
+		uint GroupSize;
+	};
 
-		uint chunkIndex;
+	DistributionResult GetDistributedIndexAndLocal(uint index, uint totalItems, uint groupCount)
+	{
+		DistributionResult result;
+		
+		uint base = totalItems / groupCount;
+		uint remainder = totalItems % groupCount;
 
-		if (index < grassPerChunk * extraGrass)
+		uint threshold = (base + 1) * remainder;
+
+		if (index < threshold)
 		{
-			return index / grassPerChunk;
+			result.GroupIndex = index / (base + 1);
+			result.LocalIndex = index % (base + 1);
+			result.GroupSize  = base + 1;
+			return result;
 		}
+			
+		uint adjusted = index - threshold;
+		result.GroupIndex = remainder + adjusted / base;
+		result.LocalIndex = adjusted % base;
+		result.GroupSize = base;
 
-		uint indexInRemaining = index - grassPerChunk * extraGrass;
-		return extraGrass + (indexInRemaining / grassPerChunk);
+		return result;
 	}
+
 
 	[numthreads(64, 1, 1)]
     void MainCs(uint3 id : SV_DispatchThreadID)
@@ -241,31 +271,33 @@ CS
 
 		if(index > grassCount) return;
 
-		ChunkData chunkData = chunkBuffer[GetChunkIndex(index)];
+		DistributionResult worldChunks = GetDistributedIndexAndLocal(index, grassCount, totalChunks);
+
+		ChunkData chunkData = chunkBuffer[worldChunks.GroupIndex];
 
 		if(!chunkData.Visible) return;
+
+		DistributionResult subChunks = GetDistributedIndexAndLocal(worldChunks.LocalIndex, worldChunks.GroupSize, subChunkCountPerChunk);
 		
-		//float subHalfChunkSize = subChunkSize * 0.5f;
+		uint globalSubChunkIndex = worldChunks.GroupIndex * subChunkCountPerChunk + subChunks.GroupIndex;
+		
+		SubChunkData subChunkData = subChunkBuffer[globalSubChunkIndex];
 
-		//float2 subChunkOffset = GetSubChunkOffset(index, subHalfChunkSize);
+		if(!subChunkData.Visible) return;
 
-		//float2 halfChunk = chunkSize * 0.5f;
-
-		//float2 chunkOffset = GetChunkOffset(index, chunksPerRow, chunkSize, halfChunk);
-
-		float2 centerOfChunk = terrainPosition.xy + chunkData.Position;
-
-		float2 worldXY = GetJitteredPosition(index, centerOfChunk, chunkData	);
+		float2 centerOfChunk = subChunkData.Position;
+	
+		float2 worldXY = GetJitteredPosition(index, centerOfChunk, subChunkData.Size);
 
 		uint texWidth, texHeight;
 		_HeightMap.GetDimensions(texWidth, texHeight);
 
 		uint2 texel = WorldToTexel(worldXY, texWidth, texHeight);
 
-		float texelSizeWorld = terrainSize.x / (texWidth - 1);
-
 		float height = SampleHeight(texel);
 
+		float texelSizeWorld = terrainSize.x / (texWidth - 1);
+		
 		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
 
 		//if(!InsideCameraFrustrum(grassPosition)) return;
