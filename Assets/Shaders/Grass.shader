@@ -61,7 +61,7 @@ VS
     
         Wind gust    = { 0.5f, 1.2f, 0.3f };  // Quick, subtle ripples
         Wind primary = { 0.2f, 0.6f, 0.7f };  // Main movement
-        Wind large   = { 0.05f, 0.5f, 0.5f }; // Slow, strong swaying
+        Wind large   = { 0.08f, 0.4f, 1.0f }; // Slow, strong swaying
     
         float gustWind    = Simplex2D(grassPosition.xy * flowScale * gust.Frequency + g_flTime * gust.Speed);
         float primaryWind = Simplex2D(grassPosition.xy * flowScale * primary.Frequency + g_flTime * primary.Speed);
@@ -83,14 +83,13 @@ VS
         float heightNorm = saturate(vertex.z / maxBladeHeight);
 
         float tipInfluence = heightNorm * heightNorm; 
-        float randomVariation = grass.BladeHash;
+        float bladeHash = grass.BladeHash;
 
         float width = lerp(2.0, 1.0, heightNorm); 
 
         vertex.x *= width * 1.7f;
-        float randID = grass.BladeHash;
     
-        float lodDistance = 1200 + randID * 2000.0f;
+        float lodDistance = 1500 + bladeHash * 2000.0f;
 
         if(grass.DistanceFromCamera > lodDistance)
         {
@@ -115,7 +114,7 @@ VS
             float3 surfaceTangent = normalize(cross(axis, surfaceNormal));
             float3 surfaceBitangent = cross(surfaceNormal, surfaceTangent);
         
-            float billboardFactor = smoothstep(1500, 10000, grass.DistanceFromCamera);
+            float billboardFactor = smoothstep(50, 10000, grass.DistanceFromCamera);
 
             float3 finalTangent   = lerp(surfaceTangent, right, billboardFactor);
             float3 finalBitangent = lerp(surfaceBitangent, cameraDirection, billboardFactor);
@@ -124,7 +123,7 @@ VS
             float3 worldVertex = rotatedVertex.x * finalTangent + rotatedVertex.y * finalBitangent + rotatedVertex.z * finalNormal;
 
             o.vPositionPs = Position3WsToPs( grass.Position + worldVertex );
-            o.vVertexColor = float4(randomVariation, tipInfluence, tipInfluence, grass.DistanceFromCamera);
+            o.vVertexColor = float4(bladeHash, tipInfluence, tipInfluence, grass.DistanceFromCamera);
             return o;
         }
 
@@ -143,22 +142,30 @@ VS
         float3 axis = abs(surfaceNormal.z) < 0.999 ? float3(0, 0, 1) : float3(0, 1, 0);
         float3 surfaceTangent = normalize(cross(axis, surfaceNormal));
         float3 surfaceBitangent = cross(surfaceNormal, surfaceTangent);
-    
-        float3 worldVertex = rotatedVertex.x * surfaceTangent + rotatedVertex.y * surfaceBitangent + rotatedVertex.z * surfaceNormal;
 
         // Hard coded for now 
         float3 windDirection = float3(1.0, 0.5f, 0.0);
     
         float wind = CalculateWind(grass.Position);
-        const float windStrength = 10.0;
-    
         float flexibility = 1.0 - grass.Stiffness;
-        worldVertex += windDirection * wind * windStrength * tipInfluence * flexibility;
+
+        float angle = wind * flexibility * tipInfluence * 0.3f;
+
+        float s = sin(angle);
+        float c = cos(angle);
+
+        float x = rotatedVertex.x;
+        float z = rotatedVertex.z;
+
+        rotatedVertex.x = x * c - z * s;
+        rotatedVertex.z = x * s + z * c;
+
+        float3 worldVertex = rotatedVertex.x * surfaceTangent + rotatedVertex.y * surfaceBitangent + rotatedVertex.z * surfaceNormal;
 
         float3 finalPosition = grass.Position + worldVertex;
         o.vPositionPs = Position3WsToPs( finalPosition );
 
-        o.vVertexColor = float4(randomVariation, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
+        o.vVertexColor = float4(bladeHash, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
         //o.vVertexColor = float4(wind.xxx, 1);  // Used to see the noise 
 
         return o;
@@ -191,11 +198,12 @@ PS
 	    float blendMask = ditheredDist * ditheredDist * (3.0 - 2.0 * ditheredDist);
 	
 	    float random = frac(sin(variation * 12.9898) * 43758.5453);
+
 	    float3 baseGrass = lerp(grassColorDark, grassColorLight, variation);
 	
-	    float yellowStrength = smoothstep(0.1, 0.8, random);
+	    float yellowStrength = smoothstep(0.2, 0.65, random);
 	    float tipAmount = saturate(height * height) * yellowStrength;
-	    float noisyTip = tipAmount * lerp(0.1, 0.90, noise);
+	    float noisyTip = tipAmount * lerp(0.2, 0.90, noise);
 	
 	    float3 nearColor = lerp(baseGrass, grassColorTip, noisyTip + tipAmount);
 	

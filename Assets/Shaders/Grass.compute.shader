@@ -210,7 +210,7 @@ CS
 		grassData.Position   = grassPosition;
 		grassData.Rotation   = Random(seed * bladeHash, -2.0f * PI, 2.0f * PI);
 		grassData.BendAmount = Random(seed * bladeHash, 0.5, 1.5f);
-		grassData.Stiffness  = Random(seed * bladeHash, 0.2f, 1.0f);
+		grassData.Stiffness  = Random(seed * bladeHash, 0.1f, 0.8f);
 		grassData.Normal	 = normal;
 		grassData.BladeHash  = bladeHash;
 		grassData.DistanceFromCamera = dist;
@@ -219,7 +219,7 @@ CS
 
 	void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
 	{
-		const float lodTransitionDist = 1200 + bladeHash * 2000;
+		const float lodTransitionDist = 1500 + bladeHash * 2000.0f;
 
 		if (dist < lodTransitionDist)
 		{
@@ -300,11 +300,11 @@ CS
 		
 		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
 
-		//if(!InsideCameraFrustrum(grassPosition)) return;
+		if(!InsideCameraFrustrum(grassPosition)) return;
 
 		float dist = distance(cameraPosition, grassPosition);
 
-		const float endDistance = 20000;
+		const float endDistance = 10000;
 
 		if (dist > endDistance) return;
 
@@ -312,7 +312,7 @@ CS
 
 		float densityThreshold = CalculateDensityThreshold(dist);
 
-		//if (bladeHash > densityThreshold) return;
+		if (bladeHash > densityThreshold) return;
 
 		TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
 		

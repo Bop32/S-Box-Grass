@@ -118,9 +118,8 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassGpuBufferHighLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferHighLOD" );
 		grassGpuBufferLowLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferLowLOD" );
 
-		chunkGpuBuffer = new GpuBuffer<ChunkData>( grassSettings.WorldChunksPerRow, GpuBuffer.UsageFlags.Structured, "Test" );
-		subChunkGpuBuffer = new GpuBuffer<SubChunkData>(grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData");
-		//subChunkGpuBuffer = new GpuBuffer<SubChunkData>( grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData" );
+		chunkGpuBuffer = new GpuBuffer<ChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow, GpuBuffer.UsageFlags.Structured, "Test" );
+		subChunkGpuBuffer = new GpuBuffer<SubChunkData>(grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData");
 
 		SetupGrassComputeAttributes();
 		SetupChunkComputeAttributes();
@@ -149,7 +148,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		grassComputeShader.Attributes.Set( "GrassPerChunk", grassSettings.GrassCountPerChunk / grassSettings.WorldChunksPerRow );
 
-		grassComputeShader.Attributes.Set( "TotalWorldChunks", grassSettings.WorldChunksPerRow );
+		grassComputeShader.Attributes.Set( "TotalWorldChunks", grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow );
 		grassComputeShader.Attributes.Set( "SubChunkCountPerChunk", grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow );
 
 		grassComputeShader.Attributes.Set( "ClumpStrength", grassSettings.ClumpStrength );
@@ -214,7 +213,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		RenderDebugText();
+		//RenderDebugText();
 
 		//DebugOverlaySystem.Current.Texture( terrain.HeightMap, new Rect( 0, 0, 128, 128 ) );
 	}
