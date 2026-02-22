@@ -13,26 +13,19 @@ public struct FrustumPlane
 
 public sealed class GrassCustomObject : SceneCustomObject
 {
-	struct GrassData
+	public struct GrassData
 	{
 		public Vector3 Position;
 		public Vector3 Normal;
-		public float Rotation;
-		public float Stiffness;
-		public float BendAmount;
-		public float BladeHash;
-		public float DistanceFromCamera;
-
-		public GrassData()
-		{
-			Position = 0;
-			Normal = 0;
-			Rotation = 0;
-			Stiffness = 0;
-			BendAmount = 0;
-			BladeHash = 0;
-			DistanceFromCamera = 0;
-		}
+		public Vector3 Wind;
+		public Vector2 ClumpFacing;
+		public Vector2 Facing;
+		public Color Color;
+		public float Height;
+		public float Width;
+		public float Tilt;
+		public float Bend;
+		public float SideCurve;
 	};
 
 	public struct IndirectCommand
@@ -213,7 +206,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		//RenderDebugText();
+		RenderDebugText();
 
 		//DebugOverlaySystem.Current.Texture( terrain.HeightMap, new Rect( 0, 0, 128, 128 ) );
 	}

@@ -6,16 +6,28 @@ MODES
 CS
 {
 	#include "system.fxc"
-	
+	#include "common/shared.hlsl"
+   #include "common/Bindless.hlsl"
+   #include "common/classes/Depth.hlsl"
+
+   #include "procedural.hlsl"
+
+   #include "Wind.hlsl"
+
 	struct GrassData
 	{
-		float3 Position;	
-		float3 Normal;		
-		float  Rotation;	
-		float  Stiffness;
-		float  BendAmount;	
-		float BladeHash;
-		float DistanceFromCamera;
+		float3 Position;
+      float3 Normal;
+      float3 Wind;
+      float2 ClumpFacing;
+      float2 Facing;
+      float3 Color;
+      uint Hash;
+      float Height;
+      float Width;
+      float Tilt;
+      float Bend;
+      float SideCurve;
 	};		
 
 	struct ChunkData
@@ -47,38 +59,40 @@ CS
 	};
 
 	static const float PI = 3.14159265359;
+	
+	//Hash functions
+	uint Hash(uint n)
+    {
+        n ^= n >> 16;
+        n *= 0x7feb352d;
+        n ^= n >> 15;
+        n *= 0x846ca68b;
+        n ^= n >> 16;
+        return n;
+    }
+    float Hash01(uint n)
+    {
+        return (Hash(n) & 0x00FFFFFFu) / 16777215.0;
+    }
 
-	float Hash(uint seed)
-	{
-		seed = (seed ^ 61) ^ (seed >> 16);
-		seed *= 9;
-		seed = seed ^ (seed >> 4);
-		seed *= 0x27d4eb2d;
-		seed = seed ^ (seed >> 15);
-		return float(seed) / 4294967296.0; 
-	}
-
-	float HashXY(float x, float y)
-	{
-		return frac(sin(x * 12.9898f + y * 78.233f) * 43758.5453f);
-	}
-
-	float HashXY(float2 value)
-	{
-		return frac(sin(value.x * 12.9898f + value.y * 78.233f) * 43758.5453f);
-	}
-
-	float Hash12(float2 p)
-	{
-		float3 p3 = frac(float3(p.xyx) * 0.1031);
-		p3 += dot(p3, p3.yzx + 33.33);
-		return frac((p3.x + p3.y) * p3.z);
-	}
+    float2 Hash02(uint n)
+    {
+        uint h = Hash(n);
+        return float2((h & 0xFFFFu), (h >> 16)) / 65535.0;
+    }
 	
 	float Random(uint seed, float minVal, float maxVal)
 	{
-		return minVal + Hash(seed) * (maxVal - minVal);
+		return minVal + Hash01(seed) * (maxVal - minVal);
 	}
+
+    float3 SampleWind(float3 pos)
+    {
+        float strength = 1.0f;
+        float stiffness = 0.0f;
+        float3 wind = Wind::GetWindDisplacement( pos, strength, stiffness );
+        return wind;
+    }
 
 	float2 GetClumpOffset(float2 worldPos, ChunkData chunkData)
 	{
@@ -87,7 +101,7 @@ CS
 
 		float2 clumpCell = floor(worldPos / clumpSize);
 
-		float h = HashXY(clumpCell.x, clumpCell.y);
+		float h = Hash01(clumpCell.x) + Hash01(clumpCell.y);
 
 		float2 centerOffset = float2(frac(h * 12.9898), frac(h * 78.233)) * clumpSize;
 
@@ -160,7 +174,7 @@ CS
 
 	float SampleHeight(uint2 texel)
 	{																				  
-		return _HeightMap.Load(int3(texel.x, texel.y, 0)).r * terrainSize.y;
+		return _HeightMap.Load(int3(texel.x, texel.y, 0)).r;
 	}
 
 	struct TerrainNormalData
@@ -201,19 +215,42 @@ CS
 		return 1.0 - saturate((dist - startDistance) / (endDistance - startDistance));
 	}
 
-	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
+	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float height)
 	{
-		uint seed = index * 17u + uint(grassPosition.x * 19) + uint(grassPosition.y * 23);
 
+      uint seed = index * 9781u + 231u; 
+
+      float facingAngle = Hash02(seed * 128u).x * 6.28318; // 0‑2π
+      float2 facing = float2(cos(facingAngle), sin(facingAngle));
+
+      // Add clumping behavior - grass tends to grow in similar directions locally
+      float2 clumpCenter = floor(grassPosition.xy / 2.0) * 2.0; // 2m clumps
+      uint clumpSeed = Hash(uint(clumpCenter.x * 1000 + clumpCenter.y));
+      float clumpAngle = Hash01(clumpSeed) * 6.28318;
+      float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
+      
+      // Blend individual and clump facing (more clumped look)
+      float clumpStrength = 0.4; // How much grass follows clump direction
+      facing = normalize(lerp(facing, clumpFacing, clumpStrength));
+
+      float rHeight = Hash01(seed * 13u);
+      float rWidth = Hash01(seed * 37u);
+      float rTilt = Hash01(seed * 71u);
+      float rBend = Hash01(seed * 97u);
+      float rCurve = Hash01(seed * 101u);
 
 		GrassData grassData;
 		grassData.Position   = grassPosition;
-		grassData.Rotation   = Random(seed * bladeHash, -2.0f * PI, 2.0f * PI);
-		grassData.BendAmount = Random(seed * bladeHash, 0.5, 1.5f);
-		grassData.Stiffness  = Random(seed * bladeHash, 0.1f, 0.8f);
-		grassData.Normal	 = normal;
-		grassData.BladeHash  = bladeHash;
-		grassData.DistanceFromCamera = dist;
+      grassData.Normal = normal;
+		grassData.Facing = facing;
+      grassData.Wind = SampleWind(grassPosition) * 100;
+      grassData.Hash = seed;
+      grassData.ClumpFacing = facing; 
+      grassData.Height = lerp(0.5, 1.0, rHeight) * height;
+      grassData.Width = lerp(1.5, 3.0, rWidth);
+      grassData.Tilt = lerp(-12.0, 12.0, rTilt) * (1.0 - height * 0.5); // More tilt in sparse areas
+      grassData.Bend = rBend * rBend; // Quadratic bend for more natural distribution
+      grassData.SideCurve = (rCurve - 0.5) * 2.0 * saturate(rHeight * 2.0); // More curve on taller grass
 		return grassData;
 	}
 
@@ -263,6 +300,28 @@ CS
 		return result;
 	}
 
+	bool PositionVisibleAt(float3 pos)
+    {
+      if (!InsideCameraFrustrum(pos)) return false;
+
+		float4 clipPos = Position3WsToPs(pos);
+
+		if (clipPos.w <= 0.0f) return false;
+
+		clipPos.xyz /= clipPos.w;
+
+        // Depth test
+        float2 uv = clipPos.xy * 0.5f + 0.5f; // [0,1] range
+        uv.y = 1.0f - uv.y; // flip Y for texture coords
+        
+		// Downsample depth texture for more accuracy
+         float flDepth = Depth::Normalize( g_tDepthChain.SampleLevel( g_sPointWrap, uv, 5.0f ).x ) ;
+
+        if(flDepth > clipPos.z) return false; // culled by depth
+
+        return true;
+	}
+
 
 	[numthreads(64, 1, 1)]
     void MainCs(uint3 id : SV_DispatchThreadID)
@@ -298,9 +357,9 @@ CS
 
 		float texelSizeWorld = terrainSize.x / (texWidth - 1);
 		
-		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
+		float3 grassPosition = float3(worldXY.x, worldXY.y, (height * terrainSize.y) + terrainPosition.z);
 
-		if(!InsideCameraFrustrum(grassPosition)) return;
+		if(!PositionVisibleAt(grassPosition)) return;
 
 		float dist = distance(cameraPosition, grassPosition);
 
@@ -308,7 +367,7 @@ CS
 
 		if (dist > endDistance) return;
 
-		float bladeHash = Hash12(worldXY);
+		float bladeHash = Hash01(worldXY.x) + Hash01(worldXY.y);
 
 		float densityThreshold = CalculateDensityThreshold(dist);
 
@@ -318,7 +377,7 @@ CS
 		
 		if(terrainData.SlopeAngle > 90.0) return;
 
-		GrassData grassData = CreateGrassData(index, grassPosition, terrainData.Normal, bladeHash, dist);
+		GrassData grassData = CreateGrassData(index, grassPosition, terrainData.Normal, height);
 
 		AppendToBuffer(grassData, dist, bladeHash);
     }
