@@ -99,7 +99,7 @@ VS
             float cosR = cos(grass.Rotation);
             float sinR = sin(grass.Rotation);
         
-            float3 cameraDirection = normalize(cameraPosition - grass.Position);
+            float3 cameraDirection = normalize(g_vCameraPositionWs - grass.Position);
     
             float3 right = float3(-cameraDirection.y, cameraDirection.x, 0);
             float3 up = float3(0, 0, 1);
@@ -114,7 +114,7 @@ VS
             float3 surfaceTangent = normalize(cross(axis, surfaceNormal));
             float3 surfaceBitangent = cross(surfaceNormal, surfaceTangent);
         
-            float billboardFactor = smoothstep(50, 10000, grass.DistanceFromCamera);
+            float billboardFactor = smoothstep(50, 1000, grass.DistanceFromCamera);
 
             float3 finalTangent   = lerp(surfaceTangent, right, billboardFactor);
             float3 finalBitangent = lerp(surfaceBitangent, cameraDirection, billboardFactor);
@@ -165,6 +165,7 @@ VS
         float3 finalPosition = grass.Position + worldVertex;
         o.vPositionPs = Position3WsToPs( finalPosition );
 
+        o.vNormalWs = grass.Position;
         o.vVertexColor = float4(bladeHash, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
         //o.vVertexColor = float4(wind.xxx, 1);  // Used to see the noise 
 
@@ -179,39 +180,59 @@ PS
 
 	float4 MainPs(PixelInput i) : SV_Target0
     {
-	    float3 grassColorDark  = float3(0.1, 0.3, 0.05);
-	    float3 grassColorLight = float3(0.3, 0.6, 0.2);
-	    float3 grassColorTip   = float3(0.5, 0.7, 0.3);
-	
-	    float variation = i.vVertexColor.r; 
-	    float height    = i.vVertexColor.g; 
-	    float noise     = i.vVertexColor.b;
-	    float distance  = i.vVertexColor.a;
-	
-	    float lodTransitionStart = 1500.0; 
-	    float lodTransitionEnd   = 10000.0; 
-	
-	    float normalizedDist = saturate((distance - lodTransitionStart) / (lodTransitionEnd - lodTransitionStart));
-	
-	    float ditheredDist = saturate(normalizedDist + (noise - 0.5) * 0.25f);
-	
-	    float blendMask = ditheredDist * ditheredDist * (3.0 - 2.0 * ditheredDist);
-	
-	    float random = frac(sin(variation * 12.9898) * 43758.5453);
+        float3 grassColorDark  = float3(0.1, 0.3, 0.05);
+        float3 grassColorLight = float3(0.3, 0.6, 0.2);
+        float3 grassColorTip   = float3(0.5, 0.7, 0.3);
 
-	    float3 baseGrass = lerp(grassColorDark, grassColorLight, variation);
-	
-	    float yellowStrength = smoothstep(0.2, 0.65, random);
-	    float tipAmount = saturate(height * height) * yellowStrength;
-	    float noisyTip = tipAmount * lerp(0.2, 0.90, noise);
-	
-	    float3 nearColor = lerp(baseGrass, grassColorTip, noisyTip + tipAmount);
-	
-	    float3 averageBase = lerp(grassColorDark, grassColorLight, 0.5f);
-	    float3 farColor = lerp(averageBase, grassColorTip, 0.2f);
-	
-	    float3 finalColor = lerp(nearColor, farColor, blendMask);
-	
-	    return float4(finalColor, 1.0);
+        // Patch color variants - adjust these to taste
+        float3 grassColorDry    = float3(0.22, 0.40, 0.1);   
+        float3 grassColorLush   = float3(0.05, 0.35, 0.08);  
+        float3 grassColorPale   = float3(0.35, 0.55, 0.25);  
+
+        float variation = i.vVertexColor.r; 
+        float height    = i.vVertexColor.g; 
+        float noise     = i.vVertexColor.b;
+        float distance  = i.vVertexColor.a;
+
+        float2 wp = i.vNormalWs.xy; 
+
+        float2 patchCoordLarge  = wp * 0.0001f;  
+        float2 patchCoordMedium = wp * 0.0005;   
+
+        float patchLarge = Simplex2D(patchCoordLarge);
+
+        float patchMedium = Simplex2D(patchCoordMedium);
+
+        float patchValue = saturate(patchLarge * variation + patchMedium * variation);
+        
+        float lodTransitionStart = 1500.0; 
+        float lodTransitionEnd   = 10000.0; 
+        float normalizedDist = saturate((distance - lodTransitionStart) / (lodTransitionEnd - lodTransitionStart));
+        float ditheredDist = saturate(normalizedDist + (noise - 0.5) * 0.25f);
+        float blendMask = ditheredDist * ditheredDist * (3.0 - 2.0 * ditheredDist);
+
+        float random = frac(sin(variation * 12.9898) * 43758.5453);
+        float3 baseGrass = lerp(grassColorDark, grassColorLight, variation);
+
+        float dryMask  = smoothstep(0.72, 0.80, patchValue);   
+        float lushMask = smoothstep(0.28, 0.26, patchValue);   
+
+        float3 patchedBase = baseGrass;
+        patchedBase = lerp(patchedBase, grassColorDry,  dryMask  * 0.75);
+        patchedBase = lerp(patchedBase, grassColorLush, lushMask * 0.6);
+
+        float paleMask = smoothstep(0.55, 0.75, patchMedium) * (1.0 - dryMask);
+        patchedBase = lerp(patchedBase, grassColorPale, paleMask * 0.2);
+
+        float yellowStrength = smoothstep(0.2, 0.65, random);
+        float tipAmount = saturate(height * height) * yellowStrength;
+        float noisyTip = tipAmount * lerp(0.2, 0.90, noise);
+        float3 nearColor = lerp(patchedBase, grassColorTip, noisyTip + tipAmount);
+
+        float3 averageBase = lerp(grassColorDark, grassColorLight, 0.5f);
+        float3 farColor = lerp(averageBase, grassColorTip, 0.2f);
+
+        float3 finalColor = lerp(nearColor, farColor, blendMask);
+        return float4(finalColor, 1.0);
     }
 }
