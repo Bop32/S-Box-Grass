@@ -6,12 +6,15 @@ MODES
 CS
 {
 	#include "system.fxc"
-	
+	#include "common/shared.hlsl"
+   #include "common/Bindless.hlsl"
+   
 	struct GrassData
 	{
 		float3 Position;	
 		float3 Normal;		
-		float  Rotation;	
+      float3 Color;
+		float2  Rotation;	
 		float  Stiffness;
 		float  BendAmount;	
 		float BladeHash;
@@ -48,59 +51,32 @@ CS
 
 	static const float PI = 3.14159265359;
 
-	float Hash(uint seed)
-	{
-		seed = (seed ^ 61) ^ (seed >> 16);
-		seed *= 9;
-		seed = seed ^ (seed >> 4);
-		seed *= 0x27d4eb2d;
-		seed = seed ^ (seed >> 15);
-		return float(seed) / 4294967296.0; 
-	}
+	 uint Hash(uint n)
+    {
+        n ^= n >> 16;
+        n *= 0x7feb352d;
+        n ^= n >> 15;
+        n *= 0x846ca68b;
+        n ^= n >> 16;
+        return n;
+    }
 
-	float HashXY(float x, float y)
-	{
-		return frac(sin(x * 12.9898f + y * 78.233f) * 43758.5453f);
-	}
+    float Hash01(uint n)
+    {
+        return (Hash(n) & 0x00FFFFFFu) / 16777215.0;
+    }
 
-	float HashXY(float2 value)
-	{
-		return frac(sin(value.x * 12.9898f + value.y * 78.233f) * 43758.5453f);
-	}
-
-	float Hash12(float2 p)
-	{
-		float3 p3 = frac(float3(p.xyx) * 0.1031);
-		p3 += dot(p3, p3.yzx + 33.33);
-		return frac((p3.x + p3.y) * p3.z);
-	}
+	 float2 Hash02(uint n)
+    {
+        uint h = Hash(n);
+        return float2((h & 0xFFFFu), (h >> 16)) / 65535.0;
+    }
 	
 	float Random(uint seed, float minVal, float maxVal)
 	{
-		return minVal + Hash(seed) * (maxVal - minVal);
+		return minVal + Hash01(seed) * (maxVal - minVal);
 	}
 
-	float2 GetClumpOffset(float2 worldPos, ChunkData chunkData)
-	{
-		float clumpSize = 2; 
-		float clumpStrength = 0.35;
-
-		float2 clumpCell = floor(worldPos / clumpSize);
-
-		float h = HashXY(clumpCell.x, clumpCell.y);
-
-		float2 centerOffset = float2(frac(h * 12.9898), frac(h * 78.233)) * clumpSize;
-
-		float2 clumpCenter = clumpCell * clumpSize + centerOffset;
-
-		float2 toClump = clumpCenter - worldPos;
-
-		float dist = length(toClump);
-
-		float falloff = smoothstep(clumpSize, 0.0, dist);
-
-		return toClump * clumpStrength * falloff;
-	}
 
 	bool InsideCameraFrustrum(float3 center)
 	{
@@ -110,6 +86,25 @@ CS
 		}
 		
 		return true;
+	}
+
+	bool PositionVisibleAt(float3 pos)
+    {
+      if (!InsideCameraFrustrum(pos)) return false;
+
+		float4 clipPos = Position3WsToPs(pos);
+
+		clipPos.xyz /= clipPos.w;
+
+      // Depth test
+      float2 uv = clipPos.xy * 0.5f + 0.5f; // [0,1] range
+      uv.y = 1.0f - uv.y; // flip Y for texture coords
+      
+      float flDepth = Depth::Normalize( g_tDepthChain.SampleLevel( g_sPointWrap, uv, 5.0f ).x ) ;
+
+      if(flDepth > clipPos.z) return false; // culled by depth
+
+      return true;
 	}
 
 	AppendStructuredBuffer<GrassData> grassHighLod < Attribute( "GrassHighLodData" ); >;
@@ -128,8 +123,6 @@ CS
 	
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
 	
-	float3 cameraPosition < Attribute("CameraPosition"); >;
-	
 	int grassPerChunk < Attribute("grassPerChunk"); >;
 
 	int totalChunks < Attribute("TotalWorldChunks"); >;
@@ -147,7 +140,6 @@ CS
 		float jitterX = Random(index * 13u, -halfChunk, halfChunk);
 		float jitterY = Random(index * 31u, -halfChunk, halfChunk);
 		float2 worldXY = float2(centerOfChunk.x + jitterX, centerOfChunk.y + jitterY);
-		//return worldXY + GetClumpOffset(worldXY, chunkData);
 
 		return worldXY;
 	}
@@ -203,12 +195,24 @@ CS
 
 	GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
 	{
-		uint seed = index * 17u + uint(grassPosition.x * 19) + uint(grassPosition.y * 23);
+		 uint seed = index * 9781u + 231u; // any large coprime numbers
 
+      float facingAngle = Hash02(seed * 128u).x * 6.28318; // 0‑2π
+      float2 facing = float2(cos(facingAngle), sin(facingAngle));
+      
+      // Add clumping behavior - grass tends to grow in similar directions locally
+      float2 clumpCenter = floor(grassPosition.xy / 2.0) * 2.0; // 2m clumps
+      uint clumpSeed = Hash01(uint(clumpCenter.x * 1000 + clumpCenter.y));
+      float clumpAngle = Hash01(clumpSeed) * 6.28318;
+      float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
+      
+      // Blend individual and clump facing (more clumped look)
+      float clumpStrength = 0.4; // How much grass follows clump direction
+      facing = normalize(lerp(facing, clumpFacing, clumpStrength));
 
 		GrassData grassData;
 		grassData.Position   = grassPosition;
-		grassData.Rotation   = Random(seed * bladeHash, -2.0f * PI, 2.0f * PI);
+		grassData.Rotation   = facing;
 		grassData.BendAmount = Random(seed * bladeHash, 0.5, 1.5f);
 		grassData.Stiffness  = Random(seed * bladeHash, 0.1f, 0.8f);
 		grassData.Normal	 = normal;
@@ -300,15 +304,15 @@ CS
 		
 		float3 grassPosition = float3(worldXY.x, worldXY.y, height + terrainPosition.z);
 
-		if(!InsideCameraFrustrum(grassPosition)) return;
+		if(!PositionVisibleAt(grassPosition)) return;
 
-		float dist = distance(cameraPosition, grassPosition);
+		float dist = distance(g_vCameraPositionWs, grassPosition);
 
 		const float endDistance = 10000;
 
 		if (dist > endDistance) return;
 
-		float bladeHash = Hash12(worldXY);
+		float bladeHash = Hash01(index);
 
 		float densityThreshold = CalculateDensityThreshold(dist);
 

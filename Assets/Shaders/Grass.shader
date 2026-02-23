@@ -5,31 +5,23 @@ FEATURES
 MODES
 {
     Forward();
+    Depth( S_MODE_DEPTH );
 }
 COMMON
 {
+   #define CUSTOM_MATERIAL_INPUTS 
+
 	#include "common/shared.hlsl"
 	#include "procedural.hlsl"
-	
-}
-struct VertexInput
-{
-	#include "common/vertexinput.hlsl"
-	uint nInstanceID : SV_InstanceID;
-};
-struct PixelInput
-{
-	#include "common/pixelinput.hlsl"
-};
-VS
-{
-	#include "common/vertex.hlsl"
-	
-	struct GrassData
+	#include "common/classes/Depth.hlsl"
+   	#include "Wind.hlsl"
+
+   	struct GrassData
 	{
 		float3 Position;	
 		float3 Normal;		
-		float  Rotation;
+		float3 Color;
+		float2  Rotation;
 		float Stiffness;
 		float  BendAmount;	
 		float BladeHash;
@@ -37,47 +29,31 @@ VS
 	};	
 
 	StructuredBuffer<GrassData> GrassInstanceData < Attribute( "GrassData" ); >;
+	
+}
+struct VertexInput
+{
+   float3 Position : POSITION < Semantic( PosXyz ); >;
+	float Height : TEXCOORD0 < Semantic( LowPrecisionUv ); >;
+	float4 ScreenPosition : SV_Position < Semantic( PosXyz ); >;
+	uint nInstanceID : SV_InstanceID;
+};
+struct PixelInput
+{
+   float4 Position : SV_Position;
+	float3 WorldPos : TEXCOORD0;
+	float4 Normal : TEXCOORD1;
+   uint nInstanceID : TEXCOORD2;
+};
 
-	float3 cameraPosition < Attribute("CameraPosition"); >;
-
-	float Hash12(float2 p)
-	{
-		float3 p3 = frac(float3(p.xyx) * 0.1031);
-		p3 += dot(p3, p3.yzx + 33.33);
-		return frac((p3.x + p3.y) * p3.z);
-	}
-
-
-	float CalculateWind(float3 grassPosition)
-    {
-        const float flowScale = 0.02f;       // Controls size of wind patterns || Lower = bigger, and smoother waves
-
-        struct Wind
-        {
-            float Frequency;
-            float Speed;
-            float Weight;
-        };
-    
-        Wind gust    = { 0.5f, 1.2f, 0.3f };  // Quick, subtle ripples
-        Wind primary = { 0.2f, 0.6f, 0.7f };  // Main movement
-        Wind large   = { 0.08f, 0.4f, 1.0f }; // Slow, strong swaying
-    
-        float gustWind    = Simplex2D(grassPosition.xy * flowScale * gust.Frequency + g_flTime * gust.Speed);
-        float primaryWind = Simplex2D(grassPosition.xy * flowScale * primary.Frequency + g_flTime * primary.Speed);
-        float largeWind   = Simplex2D(grassPosition.xy * flowScale * large.Frequency + g_flTime * large.Speed);
-
-        float combinedWind = gustWind * gust.Weight + primaryWind * primary.Weight + largeWind * large.Weight;
-
-        return combinedWind;
-    }
-
+VS
+{
 	PixelInput MainVs( VertexInput i )
     {
         GrassData grass = GrassInstanceData[i.nInstanceID];
         PixelInput o;
 
-        float3 vertex = i.vPositionOs;
+        float3 vertex = i.Position;
 
         const float maxBladeHeight = 28.3774f + 3.0f;
         float heightNorm = saturate(vertex.z / maxBladeHeight);
@@ -96,18 +72,15 @@ VS
             float fat = saturate((grass.DistanceFromCamera - lodDistance) / (10000.0 - lodDistance));
             vertex.x *= lerp(1.0, 5.0, fat);
             
-            float cosR = cos(grass.Rotation);
-            float sinR = sin(grass.Rotation);
-        
             float3 cameraDirection = normalize(g_vCameraPositionWs - grass.Position);
     
             float3 right = float3(-cameraDirection.y, cameraDirection.x, 0);
             float3 up = float3(0, 0, 1);
 
-            float3 rotatedVertex;
-            rotatedVertex.x = vertex.x * cosR - vertex.y * sinR;
-            rotatedVertex.y = vertex.x * sinR + vertex.y * cosR;
-            rotatedVertex.z = vertex.z;
+			float3 rotatedVertex;
+			rotatedVertex.x = vertex.x * grass.Rotation.x - vertex.y * grass.Rotation.y;
+			rotatedVertex.y = vertex.x * grass.Rotation.y + vertex.y * grass.Rotation.x;
+			rotatedVertex.z = vertex.z;
         
             float3 surfaceNormal = grass.Normal;
             float3 axis = abs(surfaceNormal.z) < 0.999 ? float3(0, 0, 1) : float3(0, 1, 0);
@@ -120,22 +93,26 @@ VS
             float3 finalBitangent = lerp(surfaceBitangent, cameraDirection, billboardFactor);
             float3 finalNormal    = lerp(surfaceNormal, up, billboardFactor);
 
-            float3 worldVertex = rotatedVertex.x * finalTangent + rotatedVertex.y * finalBitangent + rotatedVertex.z * finalNormal;
+            o.WorldPos = grass.Position + rotatedVertex.x * finalTangent + rotatedVertex.y * finalBitangent + rotatedVertex.z * finalNormal;
 
-            o.vPositionPs = Position3WsToPs( grass.Position + worldVertex );
-            o.vVertexColor = float4(bladeHash, tipInfluence, tipInfluence, grass.DistanceFromCamera);
+			o.Position = Position3WsToPs( o.WorldPos );
+
+			float baseAO = 1.0 - heightNorm; 
+			o.Normal.xyz = normalize(lerp(rotatedVertex, surfaceNormal, 0.3));
+			o.Normal.w = baseAO; 
+			grass.Color = tipInfluence.xxx;
+			
+            //o.vVertexColor = float4(bladeHash, tipInfluence, tipInfluence, grass.DistanceFromCamera);
             return o;
         }
 
         float bendFalloff = pow(tipInfluence, 1.5); 
         vertex.y += bendFalloff * grass.BendAmount * 20;
 
-        float cosR = cos(grass.Rotation);
-        float sinR = sin(grass.Rotation);
 
         float3 rotatedVertex;
-        rotatedVertex.x = vertex.x * cosR - vertex.y * sinR;
-        rotatedVertex.y = vertex.x * sinR + vertex.y * cosR;
+        rotatedVertex.x = vertex.x * grass.Rotation.x - vertex.y * grass.Rotation.y;
+        rotatedVertex.y = vertex.x * grass.Rotation.y + vertex.y * grass.Rotation.x;
         rotatedVertex.z = vertex.z;
 
         float3 surfaceNormal = grass.Normal;
@@ -146,7 +123,7 @@ VS
         // Hard coded for now 
         float3 windDirection = float3(1.0, 0.5f, 0.0);
     
-        float wind = CalculateWind(grass.Position);
+        float wind = Wind::CalculateWind(grass.Position);
         float flexibility = 1.0 - grass.Stiffness;
 
         float angle = wind * flexibility * tipInfluence * 0.3f;
@@ -162,13 +139,17 @@ VS
 
         float3 worldVertex = rotatedVertex.x * surfaceTangent + rotatedVertex.y * surfaceBitangent + rotatedVertex.z * surfaceNormal;
 
-        float3 finalPosition = grass.Position + worldVertex;
-        o.vPositionPs = Position3WsToPs( finalPosition );
+		o.WorldPos = grass.Position + worldVertex;
+		o.Position = Position3WsToPs( o.WorldPos );
 
-        o.vNormalWs = grass.Position;
-        o.vVertexColor = float4(bladeHash, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
+		float baseAO = 1.0 - heightNorm; 
+        o.Normal.xyz = normalize(lerp(rotatedVertex, surfaceNormal, 0.3));
+		o.Normal.w = baseAO; 
+		grass.Color = tipInfluence.xxx;
+        //o.vVertexColor = float4(bladeHash, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
         //o.vVertexColor = float4(wind.xxx, 1);  // Used to see the noise 
 
+        o.nInstanceID = i.nInstanceID;
         return o;
     }
 }
@@ -180,10 +161,34 @@ PS
 
 	float4 MainPs(PixelInput i) : SV_Target0
     {
+
+		GrassData grass = GrassInstanceData[i.nInstanceID];
+
+		Material m = Material::Init(i);
+
+		m.Normal = i.Normal.xyz;
+		m.WorldPosition = i.WorldPos;
+		m.WorldPositionWithOffset = i.WorldPos + g_vCameraPositionWs;
+		m.ScreenPosition = i.Position;
+		m.AmbientOcclusion = 1.0 - (i.Normal.w);
+
+		
         float3 grassColorDark  = float3(0.1, 0.3, 0.05);
         float3 grassColorLight = float3(0.3, 0.6, 0.2);
         float3 grassColorTip   = float3(0.5, 0.7, 0.3);
 
+		float random = frac(sin(grass.BladeHash * 12.9898) * 43758.5453);
+		 
+		float3 baseCol = lerp(grassColorDark, grassColorLight, random);
+
+		float height = grass.Color.x;
+		float tipMask = grass.Color.x * grass.Color.x;
+		float3 finalCol = lerp(baseCol, grassColorTip, tipMask);
+
+		m.Albedo = finalCol;
+		
+		return ShadingModelStandard::Shade( m );
+        /*
         // Patch color variants - adjust these to taste
         float3 grassColorDry    = float3(0.22, 0.40, 0.1);   
         float3 grassColorLush   = float3(0.05, 0.35, 0.08);  
@@ -234,5 +239,6 @@ PS
 
         float3 finalColor = lerp(nearColor, farColor, blendMask);
         return float4(finalColor, 1.0);
+        */
     }
 }

@@ -17,7 +17,8 @@ public sealed class GrassCustomObject : SceneCustomObject
 	{
 		public Vector3 Position;
 		public Vector3 Normal;
-		public float Rotation;
+		public Color Color;
+		public Vector2 Rotation;
 		public float Stiffness;
 		public float BendAmount;
 		public float BladeHash;
@@ -213,7 +214,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		//RenderDebugText();
+		RenderDebugText();
 
 		//DebugOverlaySystem.Current.Texture( terrain.HeightMap, new Rect( 0, 0, 128, 128 ) );
 	}
