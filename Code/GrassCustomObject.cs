@@ -2,6 +2,7 @@ using Sandbox;
 using Sandbox.Rendering;
 using System;
 using System.Drawing;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static Sandbox.VertexLayout;
 
@@ -29,6 +30,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 			Position = 0;
 			Normal = 0;
 			Rotation = 0;
+			Color = default;
 			Stiffness = 0;
 			BendAmount = 0;
 			BladeHash = 0;
@@ -45,6 +47,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 		public uint FirstInstance;
 	}
 
+	[StructLayout( LayoutKind.Sequential, Pack = 1 )]
 	struct ChunkData
 	{
 		public Vector2 Position;
@@ -61,19 +64,17 @@ public sealed class GrassCustomObject : SceneCustomObject
 		}
 	}
 
+	[StructLayout( LayoutKind.Sequential, Pack = 1 )]
 	struct SubChunkData
 	{
 		public Vector2 Position;
 		public float Size;
-
-		public int ParentChunkIndex;
 		public int Visible;
 
 		public SubChunkData()
 		{
 			Position = 0;
 			Size = 0;
-			ParentChunkIndex = 0;
 			Visible = 0;
 		}
 	};
@@ -120,14 +121,11 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassGpuBufferLowLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferLowLOD" );
 
 		chunkGpuBuffer = new GpuBuffer<ChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow, GpuBuffer.UsageFlags.Structured, "Test" );
-		subChunkGpuBuffer = new GpuBuffer<SubChunkData>(grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData");
+		subChunkGpuBuffer = new GpuBuffer<SubChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData" );
 
 		SetupGrassComputeAttributes();
 		SetupChunkComputeAttributes();
 		SetupSubChunkComputeAttributes();
-
-		grassData = new GrassData[totalGrassCount];
-		grassGpuBufferHighLod.SetData( grassData );
 
 		highLodIndirectBuffer = CreateIndirectBuffer( grassSettings.HighLodGrassModel.GetIndexCount( 0 ) );
 		lowLodIndirectBuffer = CreateIndirectBuffer( grassSettings.LowLodGrassModel.GetIndexCount( 0 ) );
@@ -147,13 +145,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassComputeShader.Attributes.Set( "TerrainPosition", grassSettings.Terrain.WorldPosition );
 		grassComputeShader.Attributes.Set( "TerrainSize", new Vector2( grassSettings.Terrain.TerrainSize, grassSettings.Terrain.TerrainHeight ) );
 
-		grassComputeShader.Attributes.Set( "GrassPerChunk", grassSettings.GrassCountPerChunk / grassSettings.WorldChunksPerRow );
-
 		grassComputeShader.Attributes.Set( "TotalWorldChunks", grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow );
 		grassComputeShader.Attributes.Set( "SubChunkCountPerChunk", grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow );
 
 		grassComputeShader.Attributes.Set( "ClumpStrength", grassSettings.ClumpStrength );
 		grassComputeShader.Attributes.Set( "ClumpSize", grassSettings.ClumpSize );
+
+		grassComputeShader.Attributes.Set( "SubChunkSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow / grassSettings.SubChunksPerRow);
 
 		grassComputeShader.Attributes.Set( "GrassHighLodData", grassGpuBufferHighLod );
 		grassComputeShader.Attributes.Set( "GrassLowLodData", grassGpuBufferLowLod );
@@ -176,7 +174,6 @@ public sealed class GrassCustomObject : SceneCustomObject
 		subChunkComputeShader = new ComputeShader( "shaders/SubChunk.Compute.shader" );
 
 		subChunkComputeShader.Attributes.Set( "WorldChunkCount", chunkGpuBuffer.ElementCount );
-		subChunkComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
 		subChunkComputeShader.Attributes.Set( "SubChunkData", subChunkGpuBuffer );
 		subChunkComputeShader.Attributes.Set( "SubChunkCountPerChunk", grassSettings.SubChunksPerRow );
 		subChunkComputeShader.Attributes.Set( "TerrainPosition", grassSettings.Terrain.WorldPosition );
@@ -208,6 +205,8 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
 
+		//grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
+
 		commandList.Attributes.Set( "CameraPosition", camera.WorldPosition );
 		InstanceGrass( grassSettings.HighLodGrassModel, grassGpuBufferHighLod, highLodIndirectBuffer );
 		InstanceGrass( grassSettings.LowLodGrassModel, grassGpuBufferLowLod, lowLodIndirectBuffer );
@@ -231,6 +230,19 @@ public sealed class GrassCustomObject : SceneCustomObject
 		Gizmo.Draw.ScreenText( $"Number of low Lod grass: `{arr[1]}`", new Vector2( 10, 20 ), "Arial", 20 );
 
 		Gizmo.Draw.ScreenText( $"Total grass count: `{totalGrassCount}`", new Vector2( 10, 40 ), "Arial", 20 );
+
+		//SubChunkData[] subChunkDatas = new SubChunkData[subChunkGpuBuffer.ElementCount];
+
+		//subChunkGpuBuffer.GetData( subChunkDatas );
+
+		//for ( int i = 0; i < subChunkDatas.Length; i++ )
+		//{
+		//	var chunk = subChunkDatas[i];
+
+		//	if ( chunk.Visible == 0 ) continue;
+
+		//	Gizmo.Draw.ScreenText( $"SubChunk {i} Visible || {chunk.Position}", new Vector2( 10, 60 + i * 20 ), "Arial", 20 );
+		//}
 	}
 
 	private void InstanceGrass( Model grassModel, GpuBuffer<GrassData> gpuBuffer, GpuBuffer<IndirectCommand> indirectCommandBuffer )
@@ -283,5 +295,17 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		highLodIndirectBuffer?.Dispose();
 		highLodIndirectBuffer = null;
+
+		grassGpuBufferLowLod?.Dispose();
+		grassGpuBufferLowLod = null;
+
+		lowLodIndirectBuffer?.Dispose();
+		lowLodIndirectBuffer = null;
+
+		chunkGpuBuffer?.Dispose();
+		chunkGpuBuffer = null;
+
+		subChunkGpuBuffer?.Dispose();
+		subChunkGpuBuffer = null;
 	}
 }

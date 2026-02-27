@@ -54,7 +54,7 @@ public sealed class Grass : Component
 
 	Dictionary<(float x, float y), float> heightMapChunks = new( 8 );
 
-	protected override void OnAwake()
+	protected override void OnEnabled()
 	{
 		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>() );
 
@@ -107,9 +107,23 @@ public sealed class Grass : Component
 		return height;
 	}
 
+
+	protected override void OnUpdate()
+	{
+		//RenderChunks();
+	}
 	protected override void DrawGizmos()
 	{
 		RenderChunks();
+
+		//Vector3 gizmoCamera = Gizmo.Camera.Position;
+
+		//float chunkSize = Terrain.TerrainSize / WorldChunksPerRow;
+
+		//int cameraChunkX = (int)Math.Floor( gizmoCamera.x / chunkSize );
+		//int cameraChunkY = (int)Math.Floor( gizmoCamera.y / chunkSize );
+
+		//Log.Info( $"Camera is in chunk: {cameraChunkX} || {cameraChunkY}" );
 	}
 
 	private void RenderChunks()
@@ -127,12 +141,12 @@ public sealed class Grass : Component
 
 			float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize.x;
 			float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize.y;
-			float z = terrainWorldPosition.z + terrainHeight;
+			float z = terrainWorldPosition.z;
 
 			Vector3 chunkPosition = new Vector3( x, y, z );
 
 			Vector3 min = new Vector3( chunkPosition.x - chunkSize.x * 0.5f, chunkPosition.y - chunkSize.y * 0.5f, terrainWorldPosition.z );
-			Vector3 max = new Vector3( chunkPosition.x + chunkSize.x * 0.5f, chunkPosition.y + chunkSize.y * 0.5f, z );
+			Vector3 max = new Vector3( chunkPosition.x + chunkSize.x * 0.5f, chunkPosition.y + chunkSize.y * 0.5f, z + Terrain.TerrainHeight );
 
 			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.White;
 
@@ -167,8 +181,8 @@ public sealed class Grass : Component
 
 			float height = GetHeightValue( subChunkPosition, half );
 
-			Vector3 min = new Vector3( subChunkPosition.x - subChunkSize.x * 0.5f + 1.0f, subChunkPosition.y - subChunkSize.y * 0.5f, Terrain.WorldPosition.z + height );
-			Vector3 max = new Vector3( subChunkPosition.x + subChunkSize.x * 0.5f, subChunkPosition.y + subChunkSize.y * 0.5f, Terrain.WorldPosition.z + height + height );
+			Vector3 min = new Vector3( subChunkPosition.x - subChunkSize.x * 0.5f + 1.0f, subChunkPosition.y - subChunkSize.y * 0.5f, z + height * 0.5f);
+			Vector3 max = new Vector3( subChunkPosition.x + subChunkSize.x * 0.5f, subChunkPosition.y + subChunkSize.y * 0.5f, Terrain.WorldPosition.z + height );
 
 			Vector3 cameraPos = Gizmo.Camera.Position;
 			float distance = Vector3.DistanceBetween( min, cameraPos );
@@ -181,7 +195,7 @@ public sealed class Grass : Component
 
 			BBox box = new( min, max );
 
-			DebugOverlay.Text( box.Center, visible, 256 );
+			DebugOverlay.Text( box.Center.WithZ(box.Center.z + min.z * 0.5f), visible, 256 );
 			DebugOverlay.Box( box, GetChunkColor( offsetX + index, offsetY + index ) );
 		}
 	}

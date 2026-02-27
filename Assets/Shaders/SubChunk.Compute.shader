@@ -5,13 +5,13 @@ MODES
 
 CS
 {
-	#include "system.fxc"
+    // clang-format off
+   #include "system.fxc"
 
 	struct SubChunkData
 	{
 		float2 Position;
 		float Size;
-		int ParentChunkIndex;
 		int Visible;
 	};
 
@@ -29,13 +29,13 @@ CS
 		float Distance;
 	};
 
-	cbuffer	FrustumPlanes
+	cbuffer FrustumPlanes
 	{
 		FrustumPlane planes[6];
 	};
 
-	RWStructuredBuffer<SubChunkData> subChunkData <Attribute("SubChunkData"); >;
 	RWStructuredBuffer<ChunkData> chunkBuffer <Attribute("ChunkData"); >;
+	RWStructuredBuffer<SubChunkData> subChunkBuffer <Attribute("SubChunkData"); >;
 
 	int worldChunkCount <Attribute("WorldChunkCount"); >;
 
@@ -45,67 +45,73 @@ CS
 
 	int subChunkPerRow <Attribute("SubChunkCountPerChunk"); >;
 
-	bool AABBInsideFrustum(float3 min, float3 max)
-	{
-		for (int i = 0; i < 6; i++)
-		{
-			float3 normal = planes[i].Normal;
+    // clang-format on
 
-			float3 positive = float3(normal.x >= 0 ? max.x : min.x, normal.y >= 0 ? max.y : min.y, normal.z >= 0 ? max.z : min.z);
+    bool AABBInsideFrustum(float3 min, float3 max)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            float3 normal = planes[i].Normal;
 
-			if (dot(normal, positive) - planes[i].Distance < 0) return false;
-		}
+            float3 positive = float3(normal.x >= 0 ? max.x : min.x, normal.y >= 0 ? max.y : min.y, normal.z >= 0 ? max.z : min.z);
 
-		return true;
-	}
+            if (dot(normal, positive) - planes[i].Distance < 0)
+                return false;
+        }
 
-	float2 GetSubChunkOffset(uint currentChunkIndex, float subChunkSize)
-	{
-		uint chunkIndexX = currentChunkIndex % subChunkPerRow;
-		uint chunkIndexY = currentChunkIndex / subChunkPerRow;
-		
-		return float2(chunkIndexX * subChunkSize, chunkIndexY * subChunkSize) + (subChunkSize * 0.5f);
-	}
+        return true;
+    }
 
-	[numthreads( 8, 1, 1 )]
-	void MainCs( uint3 id : SV_DispatchThreadID )
-	{
-		uint index = id.x;
+    float2 GetSubChunkOffset(uint currentChunkIndex, float subChunkSize)
+    {
+        uint chunkIndexX = currentChunkIndex % subChunkPerRow;
+        uint chunkIndexY = currentChunkIndex / subChunkPerRow;
 
-		uint subChunksPerChunk = subChunkPerRow * subChunkPerRow;
-		uint worldChunkIndex = index / subChunksPerChunk;
+        return float2(chunkIndexX * subChunkSize, chunkIndexY * subChunkSize);
+    }
 
-		ChunkData chunkData = chunkBuffer[worldChunkIndex];
+    [numthreads(8, 1, 1)]
+    void MainCs(uint3 id: SV_DispatchThreadID)
+    {
+        uint index = id.x;
 
-		if(!chunkData.Visible) return;
+        uint subChunksPerChunk = subChunkPerRow * subChunkPerRow;
 
-		float subChunkSize = chunkData.Size / subChunkPerRow;
+        uint worldChunkIndex = index / subChunksPerChunk;
 
-		float chunkHalf = chunkData.Size * 0.5f;
+        ChunkData chunkData = chunkBuffer[worldChunkIndex];
 
-		float2 chunkMin = chunkData.Position - chunkHalf;
-		uint localSubChunkIndex = index % subChunksPerChunk;
+        if (!chunkData.Visible)
+        {
+            SubChunkData emptySubChunk;
+            emptySubChunk.Visible = false;
+            subChunkBuffer[index] = emptySubChunk;
+            return;
+        }
 
-		float2 position = chunkMin + GetSubChunkOffset(localSubChunkIndex, subChunkSize);
-		
-		float halfSize = subChunkSize * 0.5;
-		float2 minXY = position - halfSize;
-		float2 maxXY = position + halfSize;
+        float subChunkSize = chunkData.Size / subChunkPerRow;
 
-		float minZ = terrainPosition.z;
-		float maxZ = terrainPosition.z + terrainSize.y;
+        float chunkHalf = chunkData.Size * 0.5f;
 
-		float3 mins = float3(minXY, minZ);
-		float3 max = float3(maxXY, maxZ);
+        float2 chunkMin = chunkData.Position - chunkHalf;
+        uint localSubChunkIndex = index % subChunksPerChunk;
 
-		SubChunkData subChunkDataTmp;
+        float2 position = chunkMin + GetSubChunkOffset(localSubChunkIndex, subChunkSize);
 
-		subChunkDataTmp.Position = position;
-		subChunkDataTmp.ParentChunkIndex = worldChunkIndex;
-		subChunkDataTmp.Size = subChunkSize;
-		subChunkDataTmp.Visible = AABBInsideFrustum(mins, max);
+        float2 minXY = position - subChunkSize;
+        float2 maxXY = position + subChunkSize;
 
-		subChunkData[index] = subChunkDataTmp;
+        float minZ = terrainPosition.z;
+        float maxZ = terrainPosition.z + terrainSize.y;
 
-	}	
+        float3 mins = float3(minXY, minZ);
+        float3 max = float3(maxXY, maxZ);
+
+        SubChunkData subChunkDataTmp;
+
+        subChunkDataTmp.Position = position;
+        subChunkDataTmp.Size = subChunkSize;
+        subChunkDataTmp.Visible = AABBInsideFrustum(mins, max);
+        subChunkBuffer[index] = subChunkDataTmp;
+    }
 }
