@@ -12,8 +12,13 @@ This project is here for maybe others in the future to look at to know where to 
 
 
 Here are some examples of what it looks like:
-<img width="1919" height="953" alt="image" src="https://github.com/user-attachments/assets/7ef03943-a3ea-4063-b0b7-a5fe0023fcfc" />
+<img width="1917" height="942" alt="image" src="https://github.com/user-attachments/assets/c7faf9c7-cb8b-46be-be9f-76653c545ef8" />
 
 
-https://github.com/user-attachments/assets/fa9501af-1779-492f-a7a7-8e629286b053
+
+
+
+Below is a video. (720p cause I can't upload 1080p so it might look worse than it actually does)
+
+https://github.com/user-attachments/assets/95fef838-3701-4f34-8831-15cb2d8bc38c
 
