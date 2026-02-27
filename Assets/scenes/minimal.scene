@@ -146,8 +146,8 @@
       "__version": 2,
       "Flags": 0,
       "Name": "Camera",
-      "Position": "-267.452,-379.653,297.7903",
-      "Rotation": "-0.1676478,0.08618728,0.3260576,0.9263647",
+      "Position": "1489.892,3289.644,1393.643",
+      "Rotation": "0,0,0,1",
       "Scale": "1,1,1",
       "Tags": "",
       "Enabled": true,
@@ -263,7 +263,7 @@
             "go": "cc74caa1-545e-4542-8d63-a3af3b3b0330",
             "component_type": "Terrain"
           },
-          "WorldChunksPerRow": 2
+          "WorldChunksPerRow": 10
         }
       ],
       "Children": []

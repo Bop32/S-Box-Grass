@@ -57,6 +57,10 @@ VS
     {
         GrassData grass = GrassInstanceData[i.nInstanceID];
         PixelInput o;
+        o.Position = 0;
+
+        if (grass.DistanceFromCamera < 0) return o;
+
 
         float3 vertex = i.Position;
 
@@ -169,6 +173,8 @@ PS
     {
 
         GrassData grass = GrassInstanceData[i.nInstanceID];
+
+        if (grass.DistanceFromCamera < 0) discard;
 
         Material m = Material::Init(i);
 

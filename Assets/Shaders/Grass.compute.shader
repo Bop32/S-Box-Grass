@@ -118,7 +118,7 @@ CS
 	AppendStructuredBuffer<GrassData> grassHighLod < Attribute( "GrassHighLodData" ); >;
 	AppendStructuredBuffer<GrassData> grassLowLod < Attribute( "GrassLowLodData" ); >;
 
-	RWStructuredBuffer<SubChunkData> subChunkBuffer <Attribute("SubChunkData"); >;
+	RWStructuredBuffer<ChunkData> chunkBuffer <Attribute("ChunkData"); >;
 
 	int subChunkCountPerChunk <Attribute("SubChunkCountPerChunk"); >;
 
@@ -158,6 +158,10 @@ CS
     uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
     {
         float2 uv = (worldXY - terrainPosition.xy) / terrainSize.x;
+
+        if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1)
+            return uint2(0, 0);
+
         return uint2(uv.x * (texWidth - 1), uv.y * (texHeight - 1));
     }
 
@@ -257,18 +261,22 @@ CS
 
         float cellSize = 8.0;
 
-        uint cellsPerRow = subChunkSize / cellSize;
-        uint bladesPerSubchunk = cellsPerRow * cellsPerRow;
-        uint bladesPerChunk = subChunkCountPerChunk * subChunkCountPerChunk * bladesPerSubchunk;
-        uint subChunkIndex = (index % bladesPerChunk) / bladesPerSubchunk; // which subchunk in the current chunk
-        uint localIndex = index % bladesPerSubchunk;                       // blade inside that subchunk
+        int bladesPerChunk = 8000;
 
-        SubChunkData subChunkData = subChunkBuffer[subChunkIndex];
+        uint chunkIndex = index / bladesPerChunk;
+        uint localIndex = index % bladesPerChunk;
 
-        if (!subChunkData.Visible)
+        if (chunkIndex >= totalChunks)
             return;
 
-        float2 centerOfChunk = subChunkData.Position;
+        ChunkData chunk = chunkBuffer[chunkIndex];
+
+          if (!chunk.Visible)
+              return;
+
+        float2 centerOfChunk = chunk.Position;
+
+        float cellsPerRow = 700 / cellSize;
 
         uint cellX = localIndex % cellsPerRow;
         uint cellY = localIndex / cellsPerRow;
@@ -276,7 +284,7 @@ CS
         float jitterX = Random(index + 123u, -0.4f, 0.4f);
         float jitterY = Random(index + 456u, -0.4f, 0.4f);
 
-        float chunkSize = subChunkData.Size;
+        float chunkSize = chunk.Size;
 
         float worldX = chunkSize - (cellX + 0.5f + jitterX) * cellSize;
         float worldY = chunkSize - (cellY + 0.5f + jitterY) * cellSize;
@@ -288,14 +296,17 @@ CS
 
         uint2 texel = WorldToTexel(worldXY, texWidth, texHeight);
 
+        if (texel.x == 0 && texel.y == 0)
+            return;
+
         float height = SampleHeight(texel);
 
         float texelSizeWorld = terrainSize.x / (texWidth - 1);
 
         float3 grassPosition = float3(worldXY.xy, height + terrainPosition.z);
 
-        if (!PositionVisibleAt(grassPosition))
-            return;
+        //   if (!PositionVisibleAt(grassPosition))
+        //       return;
 
         float dist = distance(g_vCameraPositionWs, grassPosition);
 

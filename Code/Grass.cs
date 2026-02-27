@@ -56,7 +56,7 @@ public sealed class Grass : Component
 
 	protected override void OnEnabled()
 	{
-		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>() );
+		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>()); ;
 
 		//SimulateChunks();
 	}
@@ -82,8 +82,12 @@ public sealed class Grass : Component
 	private Vector2 WorldToTexelCPU( Vector2 worldXY, uint texWidth, uint texHeight )
 	{
 		Vector2 uv = (worldXY - new Vector2( Terrain.WorldPosition )) / Terrain.TerrainSize;
+
+		if ( uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 ) return Vector2.Zero;
+
 		int x = (int)(uv.x * (texWidth - 1));
 		int y = (int)(uv.y * (texHeight - 1));
+
 		return new Vector2( x, y );
 	}
 
@@ -102,7 +106,7 @@ public sealed class Grass : Component
 
 		float height = Terrain.HeightMap.GetPixel( x, y ).r / 255.0f * Terrain.TerrainHeight;
 
-		heightMapChunks.TryAdd((x, y), height);
+		heightMapChunks.TryAdd( (x, y), height );
 
 		return height;
 	}
@@ -114,16 +118,47 @@ public sealed class Grass : Component
 	}
 	protected override void DrawGizmos()
 	{
-		RenderChunks();
+		//RenderChunks();
 
-		//Vector3 gizmoCamera = Gizmo.Camera.Position;
+		RenderChunksFromCamera();
+	}
 
-		//float chunkSize = Terrain.TerrainSize / WorldChunksPerRow;
+	const float INVALID_HEIGHT = 1.0f;
+	private void RenderChunksFromCamera()
+	{
+		int gridSize = WorldChunksPerRow;
 
-		//int cameraChunkX = (int)Math.Floor( gizmoCamera.x / chunkSize );
-		//int cameraChunkY = (int)Math.Floor( gizmoCamera.y / chunkSize );
+		Vector2 chunkSize = new Vector2( 700, 700 );
+		Vector3 cameraPosition = GetComponent<CameraComponent>().WorldPosition;
 
-		//Log.Info( $"Camera is in chunk: {cameraChunkX} || {cameraChunkY}" );
+		float baseX = MathF.Floor( cameraPosition.x / chunkSize.x ) * chunkSize.x + chunkSize.x * 0.5f;
+		float baseY = MathF.Floor( cameraPosition.y / chunkSize.y ) * chunkSize.y + chunkSize.y * 0.5f;
+
+		int half = gridSize / 2;
+
+		for ( int ix = 0; ix < gridSize; ix++ )
+		{
+			for ( int iy = 0; iy < gridSize; iy++ )
+			{
+				int x = ix - half;
+				int y = iy - half;
+
+				float worldX = baseX + x * chunkSize.x + chunkSize.x * 0.5f;
+				float worldY = baseY + y * chunkSize.y + chunkSize.y * 0.5f;
+				float worldZ = Terrain.WorldPosition.z;
+
+				Vector3 chunkCenter = new Vector3( worldX, worldY, worldZ );
+
+				float height = GetHeightValue( chunkCenter, half );
+
+				Vector3 min = new Vector3( worldX - chunkSize.x * 0.5f, worldY - chunkSize.y * 0.5f, worldZ + height );
+				Vector3 max = new Vector3( worldX + chunkSize.x * 0.5f, worldY + chunkSize.y * 0.5f, worldZ + height + 50 );
+
+				Color visibleChunksColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
+
+				DebugOverlay.Box( new BBox( min, max ), visibleChunksColor );
+			}
+		}
 	}
 
 	private void RenderChunks()
@@ -181,7 +216,7 @@ public sealed class Grass : Component
 
 			float height = GetHeightValue( subChunkPosition, half );
 
-			Vector3 min = new Vector3( subChunkPosition.x - subChunkSize.x * 0.5f + 1.0f, subChunkPosition.y - subChunkSize.y * 0.5f, z + height * 0.5f);
+			Vector3 min = new Vector3( subChunkPosition.x - subChunkSize.x * 0.5f + 1.0f, subChunkPosition.y - subChunkSize.y * 0.5f, z + height * 0.5f );
 			Vector3 max = new Vector3( subChunkPosition.x + subChunkSize.x * 0.5f, subChunkPosition.y + subChunkSize.y * 0.5f, Terrain.WorldPosition.z + height );
 
 			Vector3 cameraPos = Gizmo.Camera.Position;
@@ -195,14 +230,14 @@ public sealed class Grass : Component
 
 			BBox box = new( min, max );
 
-			DebugOverlay.Text( box.Center.WithZ(box.Center.z + min.z * 0.5f), visible, 256 );
+			DebugOverlay.Text( box.Center.WithZ( box.Center.z + min.z * 0.5f ), visible, 256 );
 			DebugOverlay.Box( box, GetChunkColor( offsetX + index, offsetY + index ) );
 		}
 	}
 
 	private Color GetChunkColor( int offsetX, int offsetY )
 	{
-		int hash = offsetX * 73856093 ^ offsetY * 19349663; 
+		int hash = offsetX * 73856093 ^ offsetY * 19349663;
 		hash &= 0xFFFFFF;
 
 		// Convert hash to RGB 0-1
@@ -223,12 +258,24 @@ public sealed class Grass : Component
 		uint textureWidth = (uint)Terrain.HeightMap.Width;
 		uint textureHeight = (uint)Terrain.HeightMap.Height;
 		Vector2 bottomLeftTexel = WorldToTexelCPU( bottomLeft, textureWidth, textureHeight );
+
+		if ( bottomLeftTexel == Vector2.Zero ) return INVALID_HEIGHT;
+
 		Vector2 bottomRightTexel = WorldToTexelCPU( bottomRight, textureWidth, textureHeight );
+
+		if ( bottomRightTexel == Vector2.Zero ) return INVALID_HEIGHT;
+
 		Vector2 topLeftTexel = WorldToTexelCPU( topLeft, textureWidth, textureHeight );
+
+		if ( topLeftTexel == Vector2.Zero ) return INVALID_HEIGHT;
+
 		Vector2 topRightTexel = WorldToTexelCPU( topRight, textureWidth, textureHeight );
+
+		if ( topRightTexel == Vector2.Zero ) return INVALID_HEIGHT;
 
 		float height = MathF.Max( MathF.Max( SampleHeightCPU( bottomLeftTexel ), SampleHeightCPU( bottomRightTexel ) ),
 			MathF.Max( SampleHeightCPU( topLeftTexel ), SampleHeightCPU( topRightTexel ) ) );
+
 		return height;
 	}
 

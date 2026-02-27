@@ -5,8 +5,11 @@ MODES
 
 CS
 {
-#include "system.fxc"
+    // clang-format off
+   #include "system.fxc"
+   #include "common/shared.hlsl"
 
+    // clang-format on
     struct ChunkData
     {
         float2 Position;
@@ -38,6 +41,7 @@ CS
 	float2 terrainSize <Attribute("TerrainSize"); >;
 
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
+	float3 cameraPosition < Attribute("CameraPosition"); >;
 
     // clang-format on
 
@@ -69,25 +73,39 @@ CS
     {
         uint index = id.x;
 
-        float2 position = terrainPosition.xy + GetWorldChunkOffset(index);
+        uint gridSize = worldChunkPerRow;
 
-        float minZ = terrainPosition.z;
-        float maxZ = terrainPosition.z + terrainSize.y;
+        int totalChunks = gridSize * gridSize;
 
-        float2 halfChunk = worldChunkSize * 0.5f;
+        if (index >= totalChunks)
+            return;
 
-        float2 minXY = position - halfChunk;
-        float2 maxXY = position + halfChunk;
+        float chunkSize = 700;
 
-        float3 min = float3(minXY, minZ);
-        float3 max = float3(maxXY, maxZ);
+        int halfGrid = gridSize * 0.5f;
+
+        int x = (index % gridSize) - halfGrid;
+        int y = (index / gridSize) - halfGrid;
+
+        float halfChunkSize = chunkSize * 0.5f;
+
+        float baseX = floor(cameraPosition.x / chunkSize) * chunkSize + halfChunkSize;
+        float baseY = floor(cameraPosition.y / chunkSize) * chunkSize + halfChunkSize;
+
+        float worldX = baseX + x * chunkSize + halfChunkSize;
+        float worldY = baseY + y * chunkSize + halfChunkSize;
+
+        float2 chunkPosition = float2(worldX, worldY);
+
+        float3 min = float3(worldX - chunkSize * 0.5, worldY - chunkSize * 0.5, terrainPosition.z);
+        float3 max = float3(worldX + chunkSize * 0.5, worldY + chunkSize * 0.5, terrainPosition.z + terrainSize.y);
 
         ChunkData chunkDataTmp;
 
-        chunkDataTmp.Position = position;
-        chunkDataTmp.Free = index > maximumNumberOfUsableChunks;
-        chunkDataTmp.Size = worldChunkSize;
+        chunkDataTmp.Position = chunkPosition;
+        chunkDataTmp.Size = chunkSize;
         chunkDataTmp.Visible = AABBInsideFrustum(min, max);
+        chunkDataTmp.Free = 1;
         chunkData[index] = chunkDataTmp;
     }
 }

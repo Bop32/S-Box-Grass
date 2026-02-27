@@ -47,7 +47,6 @@ public sealed class GrassCustomObject : SceneCustomObject
 		public uint FirstInstance;
 	}
 
-	[StructLayout( LayoutKind.Sequential, Pack = 1 )]
 	struct ChunkData
 	{
 		public Vector2 Position;
@@ -120,7 +119,8 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassGpuBufferHighLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferHighLOD" );
 		grassGpuBufferLowLod = new GpuBuffer<GrassData>( totalGrassCount, GpuBuffer.UsageFlags.Append, "GrassGpuBufferLowLOD" );
 
-		chunkGpuBuffer = new GpuBuffer<ChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow, GpuBuffer.UsageFlags.Structured, "Test" );
+		int chunkGpuBufferCount = grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow;
+		chunkGpuBuffer = new GpuBuffer<ChunkData>( chunkGpuBufferCount, GpuBuffer.UsageFlags.Structured, "Test" );
 		subChunkGpuBuffer = new GpuBuffer<SubChunkData>( grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow * grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow, GpuBuffer.UsageFlags.Structured, "SubChunkData" );
 
 		SetupGrassComputeAttributes();
@@ -145,13 +145,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassComputeShader.Attributes.Set( "TerrainPosition", grassSettings.Terrain.WorldPosition );
 		grassComputeShader.Attributes.Set( "TerrainSize", new Vector2( grassSettings.Terrain.TerrainSize, grassSettings.Terrain.TerrainHeight ) );
 
-		grassComputeShader.Attributes.Set( "TotalWorldChunks", grassSettings.WorldChunksPerRow * grassSettings.WorldChunksPerRow );
+		grassComputeShader.Attributes.Set( "TotalWorldChunks", chunkGpuBuffer.ElementCount );
 		grassComputeShader.Attributes.Set( "SubChunkCountPerChunk", grassSettings.SubChunksPerRow * grassSettings.SubChunksPerRow );
 
 		grassComputeShader.Attributes.Set( "ClumpStrength", grassSettings.ClumpStrength );
 		grassComputeShader.Attributes.Set( "ClumpSize", grassSettings.ClumpSize );
 
-		grassComputeShader.Attributes.Set( "SubChunkSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow / grassSettings.SubChunksPerRow);
+		grassComputeShader.Attributes.Set( "SubChunkSize", grassSettings.Terrain.TerrainSize / grassSettings.WorldChunksPerRow / grassSettings.SubChunksPerRow );
 
 		grassComputeShader.Attributes.Set( "GrassHighLodData", grassGpuBufferHighLod );
 		grassComputeShader.Attributes.Set( "GrassLowLodData", grassGpuBufferLowLod );
@@ -190,16 +190,17 @@ public sealed class GrassCustomObject : SceneCustomObject
 		FrustumPlane[] cameraFrustum = GetCameraFrustum();
 
 		chunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
-		chunkComputeShader.Dispatch( grassSettings.WorldChunksPerRow, 1, 1 );
+		chunkComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
+		chunkComputeShader.Dispatch( chunkGpuBuffer.ElementCount, 1, 1 );
 
-		subChunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
-		subChunkComputeShader.Dispatch( subChunkGpuBuffer.ElementCount, 1, 1 );
+		//subChunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
+		//subChunkComputeShader.Dispatch( subChunkGpuBuffer.ElementCount, 1, 1 );
 
 		grassGpuBufferHighLod.SetCounterValue( 0 );
 		grassGpuBufferLowLod.SetCounterValue( 0 );
 
 		grassComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
-		grassComputeShader.Attributes.Set( "SubChunkData", subChunkGpuBuffer );
+		//grassComputeShader.Attributes.Set( "SubChunkData", subChunkGpuBuffer );
 		grassComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 		grassComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
 
@@ -231,15 +232,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		Gizmo.Draw.ScreenText( $"Total grass count: `{totalGrassCount}`", new Vector2( 10, 40 ), "Arial", 20 );
 
-		//SubChunkData[] subChunkDatas = new SubChunkData[subChunkGpuBuffer.ElementCount];
+		//ChunkData[] chunkData = new ChunkData[chunkGpuBuffer.ElementCount];
 
-		//subChunkGpuBuffer.GetData( subChunkDatas );
+		//chunkGpuBuffer.GetData( chunkData );
 
-		//for ( int i = 0; i < subChunkDatas.Length; i++ )
+		//for ( int i = 0; i < chunkData.Length; i++ )
 		//{
-		//	var chunk = subChunkDatas[i];
-
-		//	if ( chunk.Visible == 0 ) continue;
+		//	var chunk = chunkData[i];
 
 		//	Gizmo.Draw.ScreenText( $"SubChunk {i} Visible || {chunk.Position}", new Vector2( 10, 60 + i * 20 ), "Arial", 20 );
 		//}
