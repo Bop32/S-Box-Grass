@@ -13,9 +13,9 @@ CS
     struct ChunkData
     {
         float2 Position;
+        int2 Grid;
         float Size;
         int Visible;
-        int Free;
     };
 
     struct FrustumPlane
@@ -41,17 +41,9 @@ CS
 	float2 terrainSize <Attribute("TerrainSize"); >;
 
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
-	float3 cameraPosition < Attribute("CameraPosition"); >;
+	float3 playerPosition < Attribute("PlayerPosition"); >;
 
     // clang-format on
-
-    float2 GetWorldChunkOffset(uint currentChunkIndex)
-    {
-        uint chunkIndexX = currentChunkIndex % worldChunkPerRow;
-        uint chunkIndexY = currentChunkIndex / worldChunkPerRow;
-
-        return float2(chunkIndexX * worldChunkSize, chunkIndexY * worldChunkSize) + (worldChunkSize * 0.5f);
-    }
 
     bool AABBInsideFrustum(float3 min, float3 max)
     {
@@ -72,40 +64,33 @@ CS
     void MainCs(uint3 id: SV_DispatchThreadID)
     {
         uint index = id.x;
-
-        uint gridSize = worldChunkPerRow;
-
+        int gridSize = worldChunkPerRow;
         int totalChunks = gridSize * gridSize;
 
         if (index >= totalChunks)
             return;
 
-        float chunkSize = 700;
+        float chunkSize = 700.0f; // Constant for now
+        int halfGrid = gridSize / 2; // 2
 
-        int halfGrid = gridSize * 0.5f;
+        int2 playerChunk = int2(floor(playerPosition.x / chunkSize), floor(playerPosition.y / chunkSize));
 
-        int x = (index % gridSize) - halfGrid;
-        int y = (index / gridSize) - halfGrid;
+        int localX = (index % gridSize) - halfGrid;
+        int localY = (index / gridSize) - halfGrid;
 
-        float halfChunkSize = chunkSize * 0.5f;
+        int2 gridCoord = playerChunk + int2(localX, localY);
 
-        float baseX = floor(cameraPosition.x / chunkSize) * chunkSize + halfChunkSize;
-        float baseY = floor(cameraPosition.y / chunkSize) * chunkSize + halfChunkSize;
+        float worldX = gridCoord.x * chunkSize + chunkSize * 0.5f;
+        float worldY = gridCoord.y * chunkSize + chunkSize * 0.5f;
 
-        float worldX = baseX + x * chunkSize + halfChunkSize;
-        float worldY = baseY + y * chunkSize + halfChunkSize;
-
-        float2 chunkPosition = float2(worldX, worldY);
-
-        float3 min = float3(worldX - chunkSize * 0.5, worldY - chunkSize * 0.5, terrainPosition.z);
-        float3 max = float3(worldX + chunkSize * 0.5, worldY + chunkSize * 0.5, terrainPosition.z + terrainSize.y);
+        float3 min = float3(worldX - chunkSize * 0.5f, worldY - chunkSize * 0.5f, terrainPosition.z);
+        float3 max = float3(worldX + chunkSize * 0.5f, worldY + chunkSize * 0.5f, terrainPosition.z + terrainSize.y);
 
         ChunkData chunkDataTmp;
-
-        chunkDataTmp.Position = chunkPosition;
+        chunkDataTmp.Position = float2(worldX, worldY);
+        chunkDataTmp.Grid = gridCoord;
         chunkDataTmp.Size = chunkSize;
         chunkDataTmp.Visible = AABBInsideFrustum(min, max);
-        chunkDataTmp.Free = 1;
         chunkData[index] = chunkDataTmp;
     }
 }

@@ -50,16 +50,16 @@ public sealed class GrassCustomObject : SceneCustomObject
 	struct ChunkData
 	{
 		public Vector2 Position;
+		public Vector2Int Grid;
 		public float Size;
 		public int Visible;
-		public int Free;
 
 		public ChunkData()
 		{
 			Position = 0;
 			Size = 0;
 			Visible = 0;
-			Free = 0;
+			Grid = 0;
 		}
 	}
 
@@ -107,12 +107,14 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 	private const int MAX_GRASS_COUNT = 1_000_000;
 
-	public GrassCustomObject( SceneWorld sceneWorld, Grass grass, CameraComponent camera ) : base( sceneWorld )
+	PlayerController playerController;
+
+	public GrassCustomObject( SceneWorld sceneWorld, Grass grass, CameraComponent camera, PlayerController player ) : base( sceneWorld )
 	{
 		grassSettings = grass;
 		this.camera = camera;
-
-		commandList = new CommandList();
+		playerController = player;
+		commandList = new CommandList();																   
 
 		//totalGrassCount = MAX_GRASS_COUNT;
 		totalGrassCount = grassSettings.GrassCountPerChunk * grassSettings.WorldChunksPerRow;
@@ -125,13 +127,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		SetupGrassComputeAttributes();
 		SetupChunkComputeAttributes();
-		SetupSubChunkComputeAttributes();
+		//SetupSubChunkComputeAttributes();
 
 		highLodIndirectBuffer = CreateIndirectBuffer( grassSettings.HighLodGrassModel.GetIndexCount( 0 ) );
 		lowLodIndirectBuffer = CreateIndirectBuffer( grassSettings.LowLodGrassModel.GetIndexCount( 0 ) );
 
-		Flags.WantsPrePass = true;
-		Flags.CastShadows = true;
+		Flags.WantsPrePass = false;
+		Flags.CastShadows = false;
 	}
 
 	private void SetupGrassComputeAttributes()
@@ -190,23 +192,17 @@ public sealed class GrassCustomObject : SceneCustomObject
 		FrustumPlane[] cameraFrustum = GetCameraFrustum();
 
 		chunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
-		chunkComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
+		chunkComputeShader.Attributes.Set( "PlayerPosition", playerController.WorldPosition );
 		chunkComputeShader.Dispatch( chunkGpuBuffer.ElementCount, 1, 1 );
-
-		//subChunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
-		//subChunkComputeShader.Dispatch( subChunkGpuBuffer.ElementCount, 1, 1 );
 
 		grassGpuBufferHighLod.SetCounterValue( 0 );
 		grassGpuBufferLowLod.SetCounterValue( 0 );
 
 		grassComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
-		//grassComputeShader.Attributes.Set( "SubChunkData", subChunkGpuBuffer );
 		grassComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 		grassComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
 
 		grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
-
-		//grassComputeShader.Dispatch( totalGrassCount, 1, 1 );
 
 		commandList.Attributes.Set( "CameraPosition", camera.WorldPosition );
 		InstanceGrass( grassSettings.HighLodGrassModel, grassGpuBufferHighLod, highLodIndirectBuffer );
@@ -216,7 +212,11 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		RenderDebugText();
 
-		//DebugOverlaySystem.Current.Texture( terrain.HeightMap, new Rect( 0, 0, 128, 128 ) );
+	}
+
+	private void RenderChunksFromCamera()
+	{
+			
 	}
 
 	private void RenderDebugText()
@@ -232,16 +232,20 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		Gizmo.Draw.ScreenText( $"Total grass count: `{totalGrassCount}`", new Vector2( 10, 40 ), "Arial", 20 );
 
-		//ChunkData[] chunkData = new ChunkData[chunkGpuBuffer.ElementCount];
+	}
 
-		//chunkGpuBuffer.GetData( chunkData );
+	public void Test()
+	{
+		ChunkData[] chunkData = new ChunkData[chunkGpuBuffer.ElementCount];
 
-		//for ( int i = 0; i < chunkData.Length; i++ )
-		//{
-		//	var chunk = chunkData[i];
+		chunkGpuBuffer.GetData( chunkData );
 
-		//	Gizmo.Draw.ScreenText( $"SubChunk {i} Visible || {chunk.Position}", new Vector2( 10, 60 + i * 20 ), "Arial", 20 );
-		//}
+		for ( int i = 0; i < chunkData.Length; i++ )
+		{
+			var chunk = chunkData[i];
+
+			DebugOverlaySystem.Current.Box( new Vector3( chunk.Position.x, chunk.Position.y, grassSettings.Terrain.WorldPosition.z + 800 ), new Vector3( chunk.Size, chunk.Size), Color.Blue );
+		}
 	}
 
 	private void InstanceGrass( Model grassModel, GpuBuffer<GrassData> gpuBuffer, GpuBuffer<IndirectCommand> indirectCommandBuffer )

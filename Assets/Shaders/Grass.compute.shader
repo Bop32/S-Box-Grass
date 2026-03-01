@@ -26,9 +26,9 @@ CS
     struct ChunkData
     {
         float2 Position;
+        int2 Grid;
         float Size;
         int Visible;
-        int Free;
     };
 
     struct SubChunkData
@@ -142,19 +142,6 @@ CS
 
     // clang-format on
 
-    float2 GetPositionInClump(uint index, float2 centerOfChunk, float chunkSize)
-    {
-        float halfChunk = chunkSize * 0.5;
-        float2 macroClump = centerOfChunk + Random2(index, -halfChunk, halfChunk);
-
-        float microRadius = chunkSize * 0.0001; // micro clumps within 10% of chunk size
-        float angle = Hash01(index * 13u) * 6.28318;
-        float radius = Hash01(index * 31u) * microRadius;
-        float2 microOffset = float2(cos(angle), sin(angle)) * radius;
-
-        return macroClump + microOffset;
-    }
-
     uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
     {
         float2 uv = (worldXY - terrainPosition.xy) / terrainSize.x;
@@ -188,14 +175,14 @@ CS
         float heightBottom = _HeightMap.Load(int3(texel.x, bottomY, 0)).r;
         float heightTop = _HeightMap.Load(int3(texel.x, topY, 0)).r;
 
-        float dx = (heightRight - heightLeft) * terrainSize.x;
-        float dy = (heightTop - heightBottom) * terrainSize.x;
+        float dx = (heightRight - heightLeft) * terrainSize.y;
+        float dy = (heightTop - heightBottom) * terrainSize.y;
 
         float horizontalDist = 2.0 * texelSizeWorld;
         float slopeMagnitude = length(float2(dx, dy)) / horizontalDist;
 
         TerrainNormalData result;
-        result.Normal = normalize(float3(-dx, -dy, 2.0 * texelSizeWorld));
+        result.Normal = normalize(float3(-dx / horizontalDist, -dy / horizontalDist, 1.0));
         result.SlopeAngle = degrees(atan(slopeMagnitude));
 
         return result;
@@ -210,14 +197,14 @@ CS
 
     GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float dist)
     {
-        uint seed = index * 9781u + 231u; // any large coprime numbers
+        uint seed = index;
 
         float facingAngle = Hash02(seed * 128u).x * 6.28318; // 0‑2π
         float2 facing = float2(cos(facingAngle), sin(facingAngle));
 
         // Add clumping behavior - grass tends to grow in similar directions locally
         float2 clumpCenter = floor(grassPosition.xy / 2.0) * 2.0; // 2m clumps
-        uint clumpSeed = Hash01(uint(clumpCenter.x * 1000 + clumpCenter.y));
+        uint clumpSeed = Hash(uint(clumpCenter.x * 1000.0 + clumpCenter.y * 73856093.0));
         float clumpAngle = Hash01(clumpSeed) * 6.28318;
         float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
 
@@ -232,8 +219,9 @@ CS
         grassData.BendAmount = Random(seed, 0.5, 1.5f);
         grassData.Stiffness = Random(seed, 0.1f, 0.8f);
         grassData.Normal = normal;
-        grassData.BladeHash = Hash01(seed);
+        grassData.BladeHash = bladeHash + Hash01(seed);
         grassData.DistanceFromCamera = dist;
+
         return grassData;
     }
 
@@ -259,9 +247,9 @@ CS
         if (index >= grassCount)
             return;
 
-        float cellSize = 8.0;
+        float cellSize = 7.0;
 
-        int bladesPerChunk = 8000;
+        uint bladesPerChunk = 10000;
 
         uint chunkIndex = index / bladesPerChunk;
         uint localIndex = index % bladesPerChunk;
@@ -271,25 +259,26 @@ CS
 
         ChunkData chunk = chunkBuffer[chunkIndex];
 
-          if (!chunk.Visible)
-              return;
+        if (chunk.Visible == 0)
+            return;
 
-        float2 centerOfChunk = chunk.Position;
-
-        float cellsPerRow = 700 / cellSize;
+        uint cellsPerRow = chunk.Size / cellSize;
 
         uint cellX = localIndex % cellsPerRow;
         uint cellY = localIndex / cellsPerRow;
 
-        float jitterX = Random(index + 123u, -0.4f, 0.4f);
-        float jitterY = Random(index + 456u, -0.4f, 0.4f);
+        int worldCellX = chunk.Grid.x * cellsPerRow + cellX;
+        int worldCellY = chunk.Grid.y * cellsPerRow + cellY;
 
-        float chunkSize = chunk.Size;
+        uint bladeSeed = (uint)(worldCellX * 73856093) ^ (uint)(worldCellY * 19349663);
 
-        float worldX = chunkSize - (cellX + 0.5f + jitterX) * cellSize;
-        float worldY = chunkSize - (cellY + 0.5f + jitterY) * cellSize;
+        float2 chunkMin = chunk.Position - chunk.Size * 0.5;
 
-        float2 worldXY = centerOfChunk + float2(worldX, worldY);
+        float2 basePos = chunkMin + float2(cellX * cellSize, cellY * cellSize);
+
+        float2 jitter = float2((Hash01(bladeSeed + 111u) - 0.5f) * cellSize, (Hash01(bladeSeed + 222u) - 0.5f) * cellSize);
+
+        float2 worldXY = basePos + jitter;
 
         uint texWidth, texHeight;
         _HeightMap.GetDimensions(texWidth, texHeight);
@@ -305,8 +294,8 @@ CS
 
         float3 grassPosition = float3(worldXY.xy, height + terrainPosition.z);
 
-        //   if (!PositionVisibleAt(grassPosition))
-        //       return;
+          if (!PositionVisibleAt(grassPosition))
+              return;
 
         float dist = distance(g_vCameraPositionWs, grassPosition);
 
@@ -315,11 +304,11 @@ CS
         if (dist > endDistance)
             return;
 
-        uint hash = Hash01(index * 997u + 123u); // any large coprime numbers
-
         float densityThreshold = CalculateDensityThreshold(dist);
 
-        if (hash > densityThreshold)
+        float bladeRandom = Hash01(bladeSeed + 789u);
+
+        if (bladeRandom > densityThreshold)
             return;
 
         TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
@@ -327,8 +316,8 @@ CS
         if (terrainData.SlopeAngle > 90.0)
             return;
 
-        GrassData grassData = CreateGrassData(index, grassPosition, terrainData.Normal, hash, dist);
+        GrassData grassData = CreateGrassData(bladeSeed, grassPosition, terrainData.Normal, bladeRandom, dist);
 
-        AppendToBuffer(grassData, dist, hash);
+        AppendToBuffer(grassData, dist, bladeRandom);
     }
 }

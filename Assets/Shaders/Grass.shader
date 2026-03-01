@@ -11,11 +11,11 @@ COMMON
 {
 #define CUSTOM_MATERIAL_INPUTS
 
+    // clang-format off
 #include "common/shared.hlsl"
-#include "Wind.hlsl"
 #include "common/classes/Depth.hlsl"
+#include "Wind.hlsl"
 #include "procedural.hlsl"
-
 
     struct GrassData
     {
@@ -29,14 +29,14 @@ COMMON
         float DistanceFromCamera;
     };
 
-    // clang-format off
-	StructuredBuffer<GrassData> GrassInstanceData < Attribute( "GrassData" ); >;
+    StructuredBuffer<GrassData> GrassInstanceData < Attribute( "GrassData" ); >;
 	
 }
 struct VertexInput
 {
    float3 Position : POSITION < Semantic( PosXyz ); >;
 	float Height : TEXCOORD0 < Semantic( LowPrecisionUv ); >;
+   float2 TexCoord1 : TEXCOORD1 < Semantic( LowPrecisionUv ); >;  // add this
 	float4 ScreenPosition : SV_Position < Semantic( PosXyz ); >;
 	uint nInstanceID : SV_InstanceID;
 };
@@ -53,14 +53,19 @@ struct PixelInput
 
 VS
 {
+    float easeOut(float x, float power)
+    {
+        return 1.0 - pow(1.0 - saturate(x), power);
+    }
+
     PixelInput MainVs(VertexInput i)
     {
         GrassData grass = GrassInstanceData[i.nInstanceID];
         PixelInput o;
         o.Position = 0;
 
-        if (grass.DistanceFromCamera < 0) return o;
-
+        if (grass.DistanceFromCamera < 0)
+            return o;
 
         float3 vertex = i.Position;
 
@@ -106,9 +111,9 @@ VS
 
             o.Position = Position3WsToPs(o.WorldPos);
 
-            float baseAO = 1.0 - heightNorm;
+            float baseAO = heightNorm;
             o.Normal.xyz = normalize(lerp(rotatedVertex, surfaceNormal, 0.3));
-            o.Normal.w = baseAO;
+            o.Normal.w = baseAO * width;
             grass.Color = float4(vertex.z, tipInfluence, tipInfluence, 1);
 
             o.Height = heightNorm;
@@ -129,9 +134,6 @@ VS
         float3 surfaceTangent = normalize(cross(axis, surfaceNormal));
         float3 surfaceBitangent = cross(surfaceNormal, surfaceTangent);
 
-        // Hard coded for now
-        float3 windDirection = float3(1.0, 0.5f, 0.0);
-
         float wind = Wind::CalculateWind(grass.Position);
         float flexibility = 1.0 - grass.Stiffness;
 
@@ -149,12 +151,28 @@ VS
         float3 worldVertex = rotatedVertex.x * surfaceTangent + rotatedVertex.y * surfaceBitangent + rotatedVertex.z * surfaceNormal;
 
         o.WorldPos = grass.Position + worldVertex;
+
+        float3 localNormal = float3(0, 0, 1);
+
+        // Yaw rotation (already in XY plane, correct for Z-up)
+        float3 rotatedNormal;
+        rotatedNormal.x = localNormal.x * grass.Rotation.x - localNormal.y * grass.Rotation.y;
+        rotatedNormal.y = localNormal.x * grass.Rotation.y + localNormal.y * grass.Rotation.x;
+        rotatedNormal.z = localNormal.z;
+
+        float nx = rotatedNormal.x;
+        float nz = rotatedNormal.z;
+        rotatedNormal.x = nx * c - nz * s;
+        rotatedNormal.z = nx * s + nz * c;
+
+        float3 worldNormal = normalize(rotatedNormal.x * surfaceTangent + rotatedNormal.y * surfaceBitangent + rotatedNormal.z * surfaceNormal);
+
         o.Position = Position3WsToPs(o.WorldPos);
 
-        float baseAO = 1.0 - heightNorm;
-        o.Normal.xyz = normalize(lerp(rotatedVertex, surfaceNormal, 0.3));
-        o.Normal.w = baseAO * width;
-        grass.Color = float4(vertex, 1);
+        o.Normal.xyz = normalize(lerp(worldNormal, surfaceNormal, 0.01));
+
+        o.Normal.w = heightNorm * width;
+        grass.Color = float4(abs(vertex.x), abs(vertex.y), abs(vertex.z) , 1);
         o.Height = heightNorm;
         // o.vVertexColor = float4(bladeHash, tipInfluence, wind * tipInfluence * 1.25f, grass.DistanceFromCamera);
         // o.vVertexColor = float4(wind.xxx, 1);  // Used to see the noise
@@ -174,16 +192,6 @@ PS
 
         GrassData grass = GrassInstanceData[i.nInstanceID];
 
-        if (grass.DistanceFromCamera < 0) discard;
-
-        Material m = Material::Init(i);
-
-        m.Normal = i.Normal.xyz;
-        m.WorldPosition = i.WorldPos;
-        m.WorldPositionWithOffset = i.WorldPos + g_vCameraPositionWs;
-        m.ScreenPosition = i.Position;
-        m.AmbientOcclusion = 1.0 - (i.Normal.w);
-
         float3 grassColorDark = float3(0.1, 0.3, 0.05);
         float3 grassColorLight = float3(0.3, 0.6, 0.2);
         float3 grassColorTip = float3(0.5, 0.7, 0.3);
@@ -194,9 +202,36 @@ PS
 
         float3 finalColor = lerp(baseCol, grassColorTip, i.Height * i.Height);
 
-        m.Albedo = finalColor;
+        float3 Albedo = finalColor;
 
-        return ShadingModelStandard::Shade(m);
+        Light sun = Light::From(i.WorldPos, 0, 0);
+        float3 L = normalize(sun.Direction);
+
+        // Wrapped diffuse - softer transition between lit and unlit
+        float NdotL = dot(i.Normal.xyz, L);
+        float wrap = 0.15; // was 0.5, much more subtle
+        float wrappedDiffuse = saturate((NdotL + wrap) / (1.0 + wrap));
+
+        // Hemisphere ambient - sky color from above, ground bounce from below
+        float3 skyColor = float3(0.1, 0.3, 0.5);
+        float3 groundColor = float3(0.1, 0.15, 0.05);
+        float hemisphereT = dot(i.Normal.xyz, float3(0, 1, 0)) * 0.5 + 0.5;
+        float3 ambient = lerp(groundColor, skyColor, hemisphereT) * Albedo;
+
+        // Translucency - sun punching through the blade
+        float3 viewDirection = normalize(g_vCameraPositionWs - i.WorldPos);
+        float3 translucentDir = normalize(L + i.Normal.xyz * 0.3);
+        float translucentDot = saturate(dot(viewDirection, -translucentDir));
+        float translucency = pow(translucentDot, 4.0) * 0.4 * i.Height; // stronger at tip
+        float3 translucentColor = Albedo * sun.Color * translucency;
+
+        // AO from your existing baseAO stored in Normal.w
+        float ao = i.Normal.w;
+
+        float3 finalLight = (Albedo * wrappedDiffuse * sun.Color + ambient) * ao + translucentColor;
+        return float4(finalLight, 1.0);
+
+        // return ShadingModelStandard::Shade(m);
         /*
         // Patch color variants - adjust these to taste
         float3 grassColorDry    = float3(0.22, 0.40, 0.1);

@@ -6,20 +6,12 @@
   "Resolution": 1024,
   "TerrainSize": 20000,
   "TerrainHeight": 10000,
-  "Materials": [
-    "materials/forest_ground.tmat",
-    "terrain/materials/snow/snow.tmat",
-    "materials/clicker/rock_boulder_dry.tmat"
-  ],
+  "Materials": [],
   "MaterialSettings": {
     "HeightBlendEnabled": true,
     "HeightBlendSharpness": 0.87
   },
   "ResourceVersion": 2,
-  "__references": [
-    "clicker.rockboulderdry#106111",
-    "duccsoft.forest_ground_tmat#60683",
-    "horvard.snow#135309"
-  ],
+  "__references": [],
   "__version": 2
 }
