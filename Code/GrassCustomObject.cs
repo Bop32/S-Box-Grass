@@ -79,7 +79,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 	};
 
 
-	private Grass grassSettings;
+	private GrassSettings grassSettings;
 
 	private ComputeShader grassComputeShader;
 
@@ -111,7 +111,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 	public GrassCustomObject( SceneWorld sceneWorld, Grass grass, CameraComponent camera, PlayerController player ) : base( sceneWorld )
 	{
-		grassSettings = grass;
+		grassSettings = grass.GetSettings();
 		this.camera = camera;
 		playerController = player;
 		commandList = new CommandList();																   
@@ -210,7 +210,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		RenderDebugText();
+		//RenderDebugText();
 
 	}
 
@@ -232,20 +232,6 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		Gizmo.Draw.ScreenText( $"Total grass count: `{totalGrassCount}`", new Vector2( 10, 40 ), "Arial", 20 );
 
-	}
-
-	public void Test()
-	{
-		ChunkData[] chunkData = new ChunkData[chunkGpuBuffer.ElementCount];
-
-		chunkGpuBuffer.GetData( chunkData );
-
-		for ( int i = 0; i < chunkData.Length; i++ )
-		{
-			var chunk = chunkData[i];
-
-			DebugOverlaySystem.Current.Box( new Vector3( chunk.Position.x, chunk.Position.y, grassSettings.Terrain.WorldPosition.z + 800 ), new Vector3( chunk.Size, chunk.Size), Color.Blue );
-		}
 	}
 
 	private void InstanceGrass( Model grassModel, GpuBuffer<GrassData> gpuBuffer, GpuBuffer<IndirectCommand> indirectCommandBuffer )

@@ -1,4 +1,5 @@
 
+using Sandbox;
 using System;
 using System.Runtime.InteropServices;
 using System.Transactions;
@@ -56,7 +57,7 @@ public sealed class Grass : Component
 
 	protected override void OnEnabled()
 	{
-		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>(), Scene.Get<PlayerController>());
+		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>(), Scene.Get<PlayerController>() );
 
 		//SimulateChunks();
 	}
@@ -119,54 +120,55 @@ public sealed class Grass : Component
 	}
 	protected override void DrawGizmos()
 	{
-		RenderChunksFromCamera();
+		RenderChunks();
+		//RenderChunksFromCamera();
 	}
 
 	const float INVALID_HEIGHT = 1.0f;
-	private void RenderChunksFromCamera()
-	{
-		int gridSize = WorldChunksPerRow;
+	//private void RenderChunksFromCamera()
+	//{
+	//	int gridSize = WorldChunksPerRow;
 
-		float chunkSize = 700;
-		Vector3 playerPosition = Scene.Get<PlayerController>().WorldPosition;
+	//	float chunkSize = 700;
+	//	Vector3 playerPosition = Scene.Get<PlayerController>().WorldPosition;
 
-		float baseX = MathF.Floor( playerPosition.x / chunkSize );
-		float baseY = MathF.Floor( playerPosition.y / chunkSize );
+	//	float baseX = MathF.Floor( playerPosition.x / chunkSize );
+	//	float baseY = MathF.Floor( playerPosition.y / chunkSize );
 
-		int half = gridSize / 2;
+	//	int half = gridSize / 2;
 
-		int chunkCount = 1;
+	//	int chunkCount = 1;
 
-		for ( int ix = 0; ix < gridSize; ix++ )
-		{
-			for ( int iy = 0; iy < gridSize; iy++ )
-			{
-				int x = ix - half;
-				int y = iy - half;
+	//	for ( int ix = 0; ix < gridSize; ix++ )
+	//	{
+	//		for ( int iy = 0; iy < gridSize; iy++ )
+	//		{
+	//			int x = ix - half;
+	//			int y = iy - half;
 
-				float worldX = (baseX + x) * chunkSize + chunkSize * 0.5f;
-				float worldY = (baseY + y) * chunkSize + chunkSize * 0.5f;
-				float worldZ = Terrain.WorldPosition.z;
+	//			float worldX = (baseX + x) * chunkSize + chunkSize * 0.5f;
+	//			float worldY = (baseY + y) * chunkSize + chunkSize * 0.5f;
+	//			float worldZ = Terrain.WorldPosition.z;
 
-				Vector3 chunkCenter = new Vector3( worldX, worldY, worldZ );
+	//			Vector3 chunkCenter = new Vector3( worldX, worldY, worldZ );
 
-				float height = GetHeightValue( chunkCenter, half );
+	//			float height = GetHeightValue( chunkCenter, half );
 
-				if ( height == INVALID_HEIGHT ) continue;
+	//			if ( height == INVALID_HEIGHT ) continue;
 
-				Vector3 min = new Vector3( worldX - chunkSize * 0.5f, worldY - chunkSize * 0.5f, worldZ + height );
-				Vector3 max = new Vector3( worldX + chunkSize * 0.5f, worldY + chunkSize * 0.5f, worldZ + height + 50 );
+	//			Vector3 min = new Vector3( worldX - chunkSize * 0.5f, worldY - chunkSize * 0.5f, worldZ + height );
+	//			Vector3 max = new Vector3( worldX + chunkSize * 0.5f, worldY + chunkSize * 0.5f, worldZ + height + 50 );
 
-				Color visibleChunksColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
+	//			Color visibleChunksColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
 
-				BBox box = new( min, max );
-				DebugOverlay.Box( box, visibleChunksColor );
-				DebugOverlay.Text( box.Center.WithZ( box.Center.z + 25 ), $"{chunkCount}", 100 );
+	//			BBox box = new( min, max );
+	//			DebugOverlay.Box( box, visibleChunksColor );
+	//			DebugOverlay.Text( box.Center.WithZ( box.Center.z + 25 ), $"{chunkCount}", 100 );
 
-				chunkCount++;
-			}
-		}
-	}
+	//			chunkCount++;
+	//		}
+	//	}
+	//}
 
 	//private void RenderChunksFromCamera()
 	//{
@@ -214,7 +216,8 @@ public sealed class Grass : Component
 		float terrainSize = Terrain.TerrainSize;
 		float terrainHeight = Terrain.TerrainHeight;
 
-		Vector2 chunkSize = new Vector2( terrainSize / WorldChunksPerRow );
+		float chunkSize = terrainSize / WorldChunksPerRow;
+		float halfChunkSize = chunkSize * 0.5f;
 		Vector3 terrainWorldPosition = Terrain.WorldPosition;
 
 		for ( int i = 0; i < WorldChunksPerRow * WorldChunksPerRow; i++ )
@@ -222,20 +225,43 @@ public sealed class Grass : Component
 			int offsetX = i % WorldChunksPerRow;
 			int offsetY = i / WorldChunksPerRow;
 
-			float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize.x;
-			float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize.y;
+			float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize;
+			float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize;
 			float z = terrainWorldPosition.z;
 
 			Vector3 chunkPosition = new Vector3( x, y, z );
 
-			Vector3 min = new Vector3( chunkPosition.x - chunkSize.x * 0.5f, chunkPosition.y - chunkSize.y * 0.5f, terrainWorldPosition.z );
-			Vector3 max = new Vector3( chunkPosition.x + chunkSize.x * 0.5f, chunkPosition.y + chunkSize.y * 0.5f, z + Terrain.TerrainHeight );
+			float height = GetHeightValueIgnoreOutOfBounds( chunkPosition, halfChunkSize );
 
-			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.White;
+			Vector3 min = new Vector3( chunkPosition.x - halfChunkSize, chunkPosition.y - halfChunkSize, z + height - 50 );
+			Vector3 max = new Vector3( chunkPosition.x + halfChunkSize, chunkPosition.y + halfChunkSize, z + height + 50 );
+
+			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
 
 			DebugOverlay.Box( new BBox( min, max ), visibleColor );
-			RenderSubChunks( chunkPosition, chunkSize, i );
+			//RenderSubChunks( chunkPosition, chunkSize, i );
 		}
+	}
+
+	private float GetHeightValueIgnoreOutOfBounds( Vector3 chunkPosition, float halfChunkSize )
+	{
+		Vector2 bottomLeft = new Vector2( chunkPosition.x - halfChunkSize, chunkPosition.y - halfChunkSize );
+		Vector2 bottomRight = new Vector2( chunkPosition.x + halfChunkSize, chunkPosition.y - halfChunkSize );
+		Vector2 topLeft = new Vector2( chunkPosition.x - halfChunkSize, chunkPosition.y + halfChunkSize );
+		Vector2 topRight = new Vector2( chunkPosition.x + halfChunkSize, chunkPosition.y + halfChunkSize );
+
+		uint textureWidth = (uint)Terrain.HeightMap.Width;
+		uint textureHeight = (uint)Terrain.HeightMap.Height;
+
+		Vector2 bottomLeftTexel = WorldToTexelCPU( bottomLeft, textureWidth, textureHeight );
+		Vector2 bottomRightTexel = WorldToTexelCPU( bottomRight, textureWidth, textureHeight );
+		Vector2 topLeftTexel = WorldToTexelCPU( topLeft, textureWidth, textureHeight );
+		Vector2 topRightTexel = WorldToTexelCPU( topRight, textureWidth, textureHeight );
+
+		float height = MathF.Max( MathF.Max( SampleHeightCPU( bottomLeftTexel ), SampleHeightCPU( bottomRightTexel ) ),
+			MathF.Max( SampleHeightCPU( topLeftTexel ), SampleHeightCPU( topRightTexel ) ) );
+
+		return height;
 	}
 
 	private void RenderSubChunks( Vector3 chunkPosition, Vector2 chunkSize, int index )

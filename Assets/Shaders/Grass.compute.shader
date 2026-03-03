@@ -9,12 +9,15 @@ CS
 
     #include "system.fxc"
     #include "common/shared.hlsl"
+    #include "utilities.hlsl"
 
     // clang-format on
     struct GrassData
     {
         float3 Position;
+        float _pad0;
         float3 Normal;
+        float _pad1;
         float4 Color;
         float2 Rotation;
         float Stiffness;
@@ -50,37 +53,6 @@ CS
     };
 
     static const float PI = 3.14159265359;
-
-    uint Hash(uint n)
-    {
-        n ^= n >> 16;
-        n *= 0x7feb352d;
-        n ^= n >> 15;
-        n *= 0x846ca68b;
-        n ^= n >> 16;
-        return n;
-    }
-
-    float Hash01(uint n)
-    {
-        return (Hash(n) & 0x00FFFFFFu) / 16777215.0;
-    }
-
-    float2 Hash02(uint n)
-    {
-        uint h = Hash(n);
-        return float2((h & 0xFFFFu), (h >> 16)) / 65535.0;
-    }
-
-    float Random(uint seed, float minVal, float maxVal)
-    {
-        return minVal + Hash01(seed) * (maxVal - minVal);
-    }
-
-    float2 Random2(uint seed, float minVal, float maxVal)
-    {
-        return float2(minVal + Hash01(seed) * (maxVal - minVal), minVal + Hash01(seed + 1u) * (maxVal - minVal));
-    }
 
     bool InsideCameraFrustrum(float3 center)
     {
@@ -136,9 +108,6 @@ CS
 
 	float2 terrainSize <Attribute("TerrainSize"); >;
 	
-	//float clumpStrength < Attribute("ClumpStrength"); Default(0.3f); >;
-	
-	//float clumpSize < Attribute("ClumpSize"); Default(3.0f); >;
 
     // clang-format on
 
@@ -175,10 +144,11 @@ CS
         float heightBottom = _HeightMap.Load(int3(texel.x, bottomY, 0)).r;
         float heightTop = _HeightMap.Load(int3(texel.x, topY, 0)).r;
 
-        float dx = (heightRight - heightLeft) * terrainSize.y;
-        float dy = (heightTop - heightBottom) * terrainSize.y;
-
         float horizontalDist = 2.0 * texelSizeWorld;
+        
+        float dx = (heightRight - heightLeft) * terrainSize.y / horizontalDist;
+        float dy = (heightTop - heightBottom) * terrainSize.y / horizontalDist;
+
         float slopeMagnitude = length(float2(dx, dy)) / horizontalDist;
 
         TerrainNormalData result;
@@ -199,7 +169,7 @@ CS
     {
         uint seed = index;
 
-        float facingAngle = Hash02(seed * 128u).x * 6.28318; // 0‑2π
+        float facingAngle = Hash01(seed * 7919u).x * 6.28318; // 0‑2π
         float2 facing = float2(cos(facingAngle), sin(facingAngle));
 
         // Add clumping behavior - grass tends to grow in similar directions locally
@@ -209,7 +179,7 @@ CS
         float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
 
         // Blend individual and clump facing (more clumped look)
-        float clumpStrength = 0.4; // How much grass follows clump direction
+        float clumpStrength = 0.2; // How much grass follows clump direction
         facing = normalize(lerp(facing, clumpFacing, clumpStrength));
 
         GrassData grassData;
@@ -219,7 +189,7 @@ CS
         grassData.BendAmount = Random(seed, 0.5, 1.5f);
         grassData.Stiffness = Random(seed, 0.1f, 0.8f);
         grassData.Normal = normal;
-        grassData.BladeHash = bladeHash + Hash01(seed);
+        grassData.BladeHash = bladeHash + Hash01(index);
         grassData.DistanceFromCamera = dist;
 
         return grassData;
@@ -247,9 +217,9 @@ CS
         if (index >= grassCount)
             return;
 
-        float cellSize = 7.0;
+        float cellSize = 10.0;
 
-        uint bladesPerChunk = 10000;
+        uint bladesPerChunk = 4900;
 
         uint chunkIndex = index / bladesPerChunk;
         uint localIndex = index % bladesPerChunk;
@@ -289,27 +259,27 @@ CS
             return;
 
         float height = SampleHeight(texel);
-
-        float texelSizeWorld = terrainSize.x / (texWidth - 1);
-
+        
         float3 grassPosition = float3(worldXY.xy, height + terrainPosition.z);
-
-          if (!PositionVisibleAt(grassPosition))
-              return;
-
+        
+        if (!PositionVisibleAt(grassPosition))
+         return;
+        
         float dist = distance(g_vCameraPositionWs, grassPosition);
-
+        
         const float endDistance = 10000;
-
+        
         if (dist > endDistance)
-            return;
-
+         return;
+        
         float densityThreshold = CalculateDensityThreshold(dist);
-
+        
         float bladeRandom = Hash01(bladeSeed + 789u);
-
+        
         if (bladeRandom > densityThreshold)
-            return;
+         return;
+        
+        float texelSizeWorld = terrainSize.x / (texWidth - 1);
 
         TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
 
