@@ -17,6 +17,8 @@ public struct GrassSettings
 	public Vector2 ChunkSize { get; set; }
 	public float ClumpStrength { get; set; }
 	public float ClumpSize { get; set; }
+
+	public Texture ControlMap { get; set; }
 }
 
 public sealed class Grass : Component
@@ -51,13 +53,19 @@ public sealed class Grass : Component
 	[Property]
 	public float ClumpSize { get; set; } = 5.0f;
 
+	[Property]
+	public Texture ControlMap { get; private set; }
+
 	GrassCustomObject grass;
 
-	Dictionary<(float x, float y), float> heightMapChunks = new( 8 );
+	Dictionary<(float x, float y), float> heightMapChunks = new();
+
+	private CameraComponent camera;
 
 	protected override void OnEnabled()
 	{
-		grass = new GrassCustomObject( Scene.SceneWorld, this, GameObject.GetComponent<CameraComponent>(), Scene.Get<PlayerController>() );
+		camera = GameObject.GetComponent<CameraComponent>();
+		grass = new GrassCustomObject( Scene.SceneWorld, this, camera, Scene.Get<PlayerController>() );
 
 		//SimulateChunks();
 	}
@@ -76,7 +84,8 @@ public sealed class Grass : Component
 			MaxNumberOfUsableChunks = MaxNumberOfUsableChunks,
 
 			ClumpStrength = ClumpStrength,
-			ClumpSize = ClumpSize
+			ClumpSize = ClumpSize,
+			ControlMap = ControlMap
 		};
 	}
 
@@ -84,7 +93,7 @@ public sealed class Grass : Component
 	{
 		Vector2 uv = (worldXY - new Vector2( Terrain.WorldPosition )) / Terrain.TerrainSize;
 
-		if ( uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 ) return Vector2.Zero;
+		if ( uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 ) return new Vector2( -9999 );
 
 		int x = (int)(uv.x * (texWidth - 1));
 		int y = (int)(uv.y * (texHeight - 1));
@@ -97,8 +106,8 @@ public sealed class Grass : Component
 		int w = Terrain.HeightMap.Width;
 		int h = Terrain.HeightMap.Height;
 
-		int x = (int)Math.Clamp( texel.x, 0, w - 1 );
-		int y = (int)Math.Clamp( texel.y, 0, h - 1 );
+		int x = (int)Math.Clamp( texel.x, 0, w );
+		int y = (int)Math.Clamp( texel.y, 0, h );
 
 		if ( heightMapChunks.TryGetValue( (x, y), out float cachedHeight ) )
 		{
@@ -115,8 +124,7 @@ public sealed class Grass : Component
 
 	protected override void OnUpdate()
 	{
-		//RenderChunksFromCamera();
-
+		DebugOverlay.Texture( Terrain.ControlMap, new Rect( 0, 300, 512, 512 ) );
 	}
 	protected override void DrawGizmos()
 	{
@@ -124,7 +132,7 @@ public sealed class Grass : Component
 		//RenderChunksFromCamera();
 	}
 
-	const float INVALID_HEIGHT = 1.0f;
+	const float INVALID_HEIGHT = -1.0f;
 	//private void RenderChunksFromCamera()
 	//{
 	//	int gridSize = WorldChunksPerRow;
@@ -216,29 +224,49 @@ public sealed class Grass : Component
 		float terrainSize = Terrain.TerrainSize;
 		float terrainHeight = Terrain.TerrainHeight;
 
-		float chunkSize = terrainSize / WorldChunksPerRow;
+		float chunkSize = 700.0f;//terrainSize / WorldChunksPerRow;
 		float halfChunkSize = chunkSize * 0.5f;
 		Vector3 terrainWorldPosition = Terrain.WorldPosition;
 
-		for ( int i = 0; i < WorldChunksPerRow * WorldChunksPerRow; i++ )
-		{
-			int offsetX = i % WorldChunksPerRow;
-			int offsetY = i / WorldChunksPerRow;
+		if ( camera == null ) camera = GameObject.GetComponent<CameraComponent>();
 
-			float x = terrainWorldPosition.x + (offsetX + 0.5f) * chunkSize;
-			float y = terrainWorldPosition.y + (offsetY + 0.5f) * chunkSize;
+		PlayerController player = Scene.Get<PlayerController>();
+
+		Vector2 localPlayerPos = new Vector2( player.WorldPosition ) - new Vector2( Terrain.WorldPosition );
+		Vector2 camForward = new Vector2( camera.WorldRotation.Forward ).Normal;
+		float gridExtent = WorldChunksPerRow * chunkSize * 0.5f;
+
+		Vector2 offsetCenter = localPlayerPos + camForward * gridExtent * 0.7f;
+
+		Vector2Int playerChunk = new Vector2Int( (int)MathF.Floor( offsetCenter.x / chunkSize ), (int)MathF.Floor( offsetCenter.y / chunkSize ) );
+
+		int totalChunks = WorldChunksPerRow * WorldChunksPerRow;
+		int halfGrid = WorldChunksPerRow / 2;
+
+
+		for ( int i = 0; i < totalChunks; i++ )
+		{
+			int localX = (i % WorldChunksPerRow) - halfGrid;
+			int localY = (i / WorldChunksPerRow) - halfGrid;
+
+			Vector2Int gridCoord = playerChunk + new Vector2Int( localX, localY );
+
+			float x = Terrain.WorldPosition.x + gridCoord.x * chunkSize + chunkSize * 0.5f;
+			float y = Terrain.WorldPosition.y + gridCoord.y * chunkSize + chunkSize * 0.5f;
 			float z = terrainWorldPosition.z;
 
 			Vector3 chunkPosition = new Vector3( x, y, z );
 
-			float height = GetHeightValueIgnoreOutOfBounds( chunkPosition, halfChunkSize );
+			float height = GetHeightValue( chunkPosition, halfChunkSize );
+
+			if ( height < 0 ) continue;
 
 			Vector3 min = new Vector3( chunkPosition.x - halfChunkSize, chunkPosition.y - halfChunkSize, z + height - 50 );
 			Vector3 max = new Vector3( chunkPosition.x + halfChunkSize, chunkPosition.y + halfChunkSize, z + height + 50 );
 
 			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
 
-			DebugOverlay.Box( new BBox( min, max ), visibleColor );
+			//DebugOverlay.Box( new BBox( min, max ), visibleColor );
 			//RenderSubChunks( chunkPosition, chunkSize, i );
 		}
 	}
@@ -322,30 +350,32 @@ public sealed class Grass : Component
 		return new Color( r, g, b );
 	}
 
-	private float GetHeightValue( Vector3 subChunkPosition, Vector2 half )
+	private float GetHeightValue( Vector3 position, Vector2 half )
 	{
-		Vector2 bottomLeft = new Vector2( subChunkPosition.x - half.x, subChunkPosition.y - half.y );
-		Vector2 bottomRight = new Vector2( subChunkPosition.x + half.x, subChunkPosition.y - half.y );
-		Vector2 topLeft = new Vector2( subChunkPosition.x - half.x, subChunkPosition.y + half.y );
-		Vector2 topRight = new Vector2( subChunkPosition.x + half.x, subChunkPosition.y + half.y );
+		Vector2 bottomLeft = new Vector2( position.x - half.x, position.y - half.y );
+		Vector2 bottomRight = new Vector2( position.x + half.x, position.y - half.y );
+		Vector2 topLeft = new Vector2( position.x - half.x, position.y + half.y );
+		Vector2 topRight = new Vector2( position.x + half.x, position.y + half.y );
 
 		uint textureWidth = (uint)Terrain.HeightMap.Width;
 		uint textureHeight = (uint)Terrain.HeightMap.Height;
+
+
 		Vector2 bottomLeftTexel = WorldToTexelCPU( bottomLeft, textureWidth, textureHeight );
 
-		if ( bottomLeftTexel == Vector2.Zero ) return INVALID_HEIGHT;
+		if ( bottomLeftTexel.x == -9999 && bottomLeftTexel.y == -9999 ) return INVALID_HEIGHT;
 
 		Vector2 bottomRightTexel = WorldToTexelCPU( bottomRight, textureWidth, textureHeight );
 
-		if ( bottomRightTexel == Vector2.Zero ) return INVALID_HEIGHT;
+		if ( bottomRightTexel.x == -9999 && bottomRightTexel.y == -9999 ) return INVALID_HEIGHT;
 
 		Vector2 topLeftTexel = WorldToTexelCPU( topLeft, textureWidth, textureHeight );
 
-		if ( topLeftTexel == Vector2.Zero ) return INVALID_HEIGHT;
+		if ( topLeftTexel.x == -9999 && topLeftTexel.y == -9999 ) return INVALID_HEIGHT;
 
 		Vector2 topRightTexel = WorldToTexelCPU( topRight, textureWidth, textureHeight );
 
-		if ( topRightTexel == Vector2.Zero ) return INVALID_HEIGHT;
+		if ( topRightTexel.x == -9999 && topRightTexel.y == -9999 ) return INVALID_HEIGHT;
 
 		float height = MathF.Max( MathF.Max( SampleHeightCPU( bottomLeftTexel ), SampleHeightCPU( bottomRightTexel ) ),
 			MathF.Max( SampleHeightCPU( topLeftTexel ), SampleHeightCPU( topRightTexel ) ) );
@@ -369,7 +399,7 @@ public sealed class Grass : Component
 
 	private FrustumPlane[] GetCameraFrustum()
 	{
-		Frustum frustum = GameObject.GetComponent<CameraComponent>().GetFrustum();
+		Frustum frustum = camera.GetFrustum();
 
 		FrustumPlane[] planes = new FrustumPlane[6];
 

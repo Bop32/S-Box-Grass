@@ -114,7 +114,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 		grassSettings = grass.GetSettings();
 		this.camera = camera;
 		playerController = player;
-		commandList = new CommandList();																   
+		commandList = new CommandList();
 
 		//totalGrassCount = MAX_GRASS_COUNT;
 		totalGrassCount = grassSettings.GrassCountPerChunk * grassSettings.WorldChunksPerRow;
@@ -140,6 +140,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 	{
 		grassComputeShader = new ComputeShader( "shaders/Grass.Compute.shader" );
 
+		grassComputeShader.Attributes.Set( "TerrainControlMap", grassSettings.ControlMap );
 		grassComputeShader.Attributes.Set( "HeightMap", grassSettings.Terrain.HeightMap );
 		grassComputeShader.Attributes.Set( "time", Time.Now );
 		grassComputeShader.Attributes.Set( "GrassCount", totalGrassCount );
@@ -210,18 +211,21 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
-		//RenderDebugText();
+		RenderDebugText();
 
 	}
 
 	private void RenderChunksFromCamera()
 	{
-			
+
 	}
 
 	private void RenderDebugText()
 	{
+		if ( !highLodIndirectBuffer.IsValid() ) return;
 		int[] arr = new int[4];
+
+
 		highLodIndirectBuffer.GetData( arr, 0, arr.Length );
 
 		Gizmo.Draw.ScreenText( $"Number of high Lod grass: `{arr[1]}`", new Vector2( 10, 0 ), "Arial", 20 );

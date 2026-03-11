@@ -41,7 +41,7 @@ COMMON
 struct VertexInput
 {
     float3 Position : POSITION < Semantic(PosXyz); > ;
-    float2 TexCoord1 : TEXCOORD0 < Semantic(LowPrecisionUv); > ;
+    float4 vNormalOs : NORMAL < Semantic( OptionallyCompressedTangentFrame ); >;
     float4 ScreenPosition : SV_Position < Semantic(PosXyz); > ;
     uint nInstanceID : SV_InstanceID;
 };
@@ -63,8 +63,9 @@ VS
     void BuildSurfaceFrame(float3 surfaceNormal, out float3 tangent, out float3 bitangent)
     {
         float3 axis = abs(surfaceNormal.z) < 0.999 ? float3(0, 0, 1) : float3(0, 1, 0);
+
         tangent = normalize(cross(axis, surfaceNormal));
-        bitangent = cross(surfaceNormal, tangent);
+        bitangent = normalize(cross(surfaceNormal, tangent));
     }
 
     // Apply 2D yaw rotation (XY plane, Z-up)
@@ -79,6 +80,25 @@ VS
         return vertex.x * tangent + vertex.y * bitangent + vertex.z * normal;
     }
 
+    float3 BezierQuadratic(float3 P0, float3 P1, float3 P2, float t)
+    {
+        float u = 1.0 - t;
+
+        return u * u * P0 + 2.0 * u * t * P1 + t * t * P2;
+    }
+
+    float3 BezierQuadraticDerivative(float3 P0, float3 P1, float3 P2, float t)
+    {
+        return 2.0 * (1.0 - t) * (P1 - P0) + 2.0 * t * (P2 - P1);
+    }
+
+    float3 BladeNormalFromTangent(float3 tangent)
+    {
+        float3 widthDir = float3(1, 0, 0);
+
+        return normalize(cross(widthDir, normalize(tangent)));
+    }
+
     PixelInput MainVs(VertexInput i)
     {
         GrassData grass = GrassInstanceData[i.nInstanceID];
@@ -86,84 +106,64 @@ VS
         o.nInstanceID = i.nInstanceID;
 
         float3 vertex = i.Position;
-        float heightNorm = 1.0 - i.TexCoord1.y;
-        float tipInfluence = heightNorm * heightNorm;
-        float width = lerp(2.0, 1.0, heightNorm);
 
-        vertex.x *= width;
+        float horizontalOffset = vertex.x - 0.5;
 
+        float heightNorm = saturate(vertex.z / 28.3);
+
+        float t = heightNorm;
+        float3 P0 = float3(0, 0, 0);
+        float3 P1 = float3(0, 0, 15);
+        float3 P2 = float3(0, 28.3, 28.3);
+        float3 curve = BezierQuadratic(P0, P1, P2, t);
+
+        vertex.y = curve.y;
+        vertex.z = curve.z;
+
+        vertex.x *= 1.5f;
+
+        vertex = ApplyYaw(vertex, grass.Rotation);
+        // --- Transform to world space ---
         float3 surfaceNormal = grass.Normal;
         float3 surfaceTangent, surfaceBitangent;
         BuildSurfaceFrame(surfaceNormal, surfaceTangent, surfaceBitangent);
 
-        float lodDistance = 1500.0 + grass.BladeHash * 1500.0;
-        if (grass.DistanceFromCamera > lodDistance)
-        {
-            float fat = saturate((grass.DistanceFromCamera - lodDistance) / (10000.0 - lodDistance));
-            vertex.x *= lerp(1.0, 2.0, fat);
+        float3 tangent = normalize(BezierQuadraticDerivative(P0, P1, P2, t));
+        tangent = ApplyYaw(tangent, grass.Rotation);
 
-            float3 camDir = normalize(g_vCameraPositionWs - grass.Position);
-            float3 up = float3(0, 0, 1);
-            float3 right = float3(-camDir.y, camDir.x, 0);
-
-            float3 rotVert = ApplyYaw(vertex, grass.Rotation);
-
-            float billboard = smoothstep(50, 1000, grass.DistanceFromCamera);
-            float3 fTangent = lerp(surfaceTangent, right, billboard);
-            float3 fBitangent = lerp(surfaceBitangent, camDir, billboard);
-            float3 fNormal = lerp(surfaceNormal, up, billboard);
-
-            o.WorldPos = grass.Position + ToWorldSpace(rotVert, fTangent, fBitangent, fNormal);
-            o.Position = Position3WsToPs(o.WorldPos);
-            o.Normal.xyz = normalize(lerp(rotVert, surfaceNormal, 0.3));
-            o.Normal.w = heightNorm * width;
-            o.Height = heightNorm;
-            o.Side = 0;
-            return o;
-        }
-
-        // Random height variation per blade, not sure if I will keep this
-        vertex.z *= lerp(0.4, 1.0, grass.BladeHash);
-
-        const float bendStrength = 20.0;
-        float bendFalloff = pow(tipInfluence, 1.5);
-        vertex.y += bendFalloff * grass.BendAmount * bendStrength;
-
-        // Curve normal (derivative of bend curve)
-        float dBend = 1.5 * pow(tipInfluence, 0.5) * grass.BendAmount * bendStrength;
-        float3 localNormal = normalize(float3(0, -1, dBend));
-
-        float3 rotVertex = ApplyYaw(vertex, grass.Rotation);
-        float3 rotNormal = ApplyYaw(localNormal, grass.Rotation);
+        float3 worldTangent = normalize(ToWorldSpace(tangent, surfaceTangent, surfaceBitangent, surfaceNormal));
+        float3 localWidthDir = normalize(float3(grass.Rotation.x, grass.Rotation.y, 0));
+        float3 worldWidthDir = normalize(cross(worldTangent, surfaceNormal));
+        float3 worldNormal = normalize(cross(worldTangent, worldWidthDir));
 
         float wind = Wind::CalculateWind(grass.Position);
         float flexibility = 1.0 - grass.Stiffness;
-        float angle = wind * flexibility * tipInfluence * 0.3;
+        float angle = wind * flexibility * (heightNorm * heightNorm) * 0.2;
         float sinAngle = sin(angle), cosAngle = cos(angle);
 
-        // Wind rotation in XZ plane (Z-up)
-        rotVertex.x = rotVertex.x * cosAngle - rotVertex.z * sinAngle;
-        rotVertex.z = rotVertex.x * sinAngle + rotVertex.z * cosAngle;
-        rotNormal.x = rotNormal.x * cosAngle - rotNormal.z * sinAngle;
-        rotNormal.z = rotNormal.x * sinAngle + rotNormal.z * cosAngle;
+        vertex.x = vertex.x * cosAngle - vertex.z * sinAngle;
+        vertex.z = vertex.x * sinAngle + vertex.z * cosAngle;
 
-        o.WorldPos = grass.Position + ToWorldSpace(rotVertex, surfaceTangent, surfaceBitangent, surfaceNormal);
-        float3 worldNormal = normalize(ToWorldSpace(rotNormal, surfaceTangent, surfaceBitangent, surfaceNormal));
+        float3 worldVertex = ToWorldSpace(vertex, surfaceTangent, surfaceBitangent, surfaceNormal);
 
-        // My attempt at View-independent thickening. Works but not great.
-        float3 localFaceNormal = float3(0, 1, 0);
-        float3 bladeFaceNormal = normalize(ToWorldSpace(ApplyYaw(localFaceNormal, grass.Rotation), surfaceTangent, surfaceBitangent, surfaceNormal));
-        float3 dirToCam = normalize(g_vCameraPositionWs - grass.Position);
-        float3 camRight = float3(g_matWorldToView[0][0], g_matWorldToView[1][0], g_matWorldToView[2][0]);
-        float edgeFactor = 1.0 - abs(dot(bladeFaceNormal, dirToCam));
+        o.WorldPos = grass.Position + worldVertex;
 
-        o.WorldPos += camRight * i.Position.x * edgeFactor * 1.5;
+        float3 viewDirection = normalize(g_vCameraPositionWs - grass.Position);
+
+        float edge = 1.0 - abs(dot(worldNormal, viewDirection));
+        float edgeFactor = smoothstep(0.5, 1.0, edge);
+
+        float3 cameraRightWs = normalize(Vector3VsToWs(float3(1, 0, 0)));
+
+        o.WorldPos += cameraRightWs * horizontalOffset * edgeFactor * 2.0;
 
         o.Position = Position3WsToPs(o.WorldPos);
+
         o.Normal.xyz = worldNormal;
-        o.Normal.w = heightNorm * width;
+        o.Normal.w = wind;
         o.Height = heightNorm;
         o.Side = i.Position.x;
+
         return o;
     }
 }
@@ -174,30 +174,41 @@ PS
 
     RenderState(CullMode, NONE);
 
-    float4 MainPs(PixelInput i) : SV_Target0
+    float4 MainPs(PixelInput i, bool bIsFrontFace: SV_IsFrontFace) : SV_Target0
     {
         GrassData grass = GrassInstanceData[i.nInstanceID];
 
-        float3 grassDark = float3(0.1, 0.3, 0.05);
-        float3 grassLight = float3(0.3, 0.6, 0.2);
-        float3 grassTip = float3(0.5, 0.7, 0.3);
+        float3 normal = i.Normal.xyz;
 
+        if (bIsFrontFace)
+            normal = -normal;
 
-        if(i.Side > 0)
+        // return float4(color, 1);
+        // return float4(SrgbGammaToLinear(normal * 0.5 + 0.5), 1);
+
+        float3 grassDark = float3(0.08, 0.25, 0.04);
+        float3 grassLight = float3(0.25, 0.6, 0.12);
+        float3 grassTip = float3(0.45, 0.55, 0.20); 
+
+        if (i.Side > 0)
         {
             grassDark *= 0.8;
             grassLight *= 0.8;
             grassTip *= 0.8;
         }
 
+        float dryness = Hash01(grass.BladeHash + 999u) * 0.2;
+        float3 dryColor = float3(0.4, 0.5, 0.1); // yellowish dry grass
+
         float random = frac(sin(grass.BladeHash * 12.9898) * 43758.5453);
-        float3 baseColor = lerp(grassDark, grassLight, random);
-        float3 Albedo = lerp(baseColor, grassTip, i.Height * i.Height);
+        float3 baseColor = lerp(grassDark, grassLight, random + i.Normal.w * 0.1);
+        baseColor = lerp(baseColor, dryColor, dryness);
+        float3 Albedo = lerp(baseColor, grassTip, i.Height * i.Height * random);
 
         // No idea what is happening below but it looks good but since shading was expensive we can just fake lighting.
         Light sun = Light::From(i.WorldPos, 0, 0);
         float3 L = normalize(sun.Direction);
-        float3 N = i.Normal.xyz;
+        float3 N = normal;
 
         float NdotL = dot(N, L);
         float wrap = 0.3;
@@ -208,16 +219,17 @@ PS
         float3 skyColor = float3(0.1, 0.3, 0.5);
         float3 groundColor = float3(0.1, 0.15, 0.05);
         float hemi = dot(N, float3(0, 0, 1)) * 0.5 + 0.5;
-        float3 ambient = lerp(groundColor, skyColor, hemi) * Albedo * sun.Color;
+        float3 sunColor = min(sun.Color, float3(1, 1, 1));
+        float3 ambient = lerp(groundColor, skyColor, hemi) * Albedo * sunColor;
 
         float3 viewDir = normalize(g_vCameraPositionWs - i.WorldPos);
         float3 transDir = normalize(L + N * 0.3);
         float transDot = saturate(dot(viewDir, -transDir));
-        float3 translucency = Albedo * sun.Color * pow(transDot, 4.0) * 0.4 * i.Height;
+        float3 translucency = Albedo * min(sunColor, 1.0) * pow(transDot, 6.0) * 0.15 * i.Height;
 
-        float ao = lerp(0.3, 1.0, i.Normal.w);
+        float ao = lerp(0.3, 1.0, i.Height);
 
-        float3 finalLight = (Albedo * diffuse * sun.Color + ambient) * ao + translucency;
+        float3 finalLight = (Albedo * diffuse * sunColor + ambient) * ao + translucency;
         return float4(finalLight, 1.0);
     }
 }

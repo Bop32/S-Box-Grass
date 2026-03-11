@@ -73,15 +73,20 @@ CS
         float chunkSize = 700.0f; // Constant for now
         int halfGrid = gridSize / 2; // 2
 
-        int2 playerChunk = int2(floor(playerPosition.x / chunkSize), floor(playerPosition.y / chunkSize));
+        float2 localPlayerPosition = float2(playerPosition.xy - terrainPosition.xy);
+        float2 camForward = float2(g_vCameraDirWs.x, g_vCameraDirWs.y);
+        float gridExtent = (gridSize * chunkSize) * 0.5f;
+        float2 offsetCenter = localPlayerPosition + camForward * gridExtent * 0.7f;
+
+        int2 playerChunk = int2(floor(offsetCenter.x / chunkSize), floor(offsetCenter.y / chunkSize));
 
         int localX = (index % gridSize) - halfGrid;
         int localY = (index / gridSize) - halfGrid;
 
         int2 gridCoord = playerChunk + int2(localX, localY);
 
-        float worldX = gridCoord.x * chunkSize + chunkSize * 0.5f;
-        float worldY = gridCoord.y * chunkSize + chunkSize * 0.5f;
+        float worldX = terrainPosition.x + gridCoord.x * chunkSize + chunkSize * 0.5f;
+        float worldY = terrainPosition.y + gridCoord.y * chunkSize + chunkSize * 0.5f;
 
         float3 min = float3(worldX - chunkSize * 0.5f, worldY - chunkSize * 0.5f, terrainPosition.z);
         float3 max = float3(worldX + chunkSize * 0.5f, worldY + chunkSize * 0.5f, terrainPosition.z + terrainSize.y);
