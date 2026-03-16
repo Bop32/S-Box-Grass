@@ -15,11 +15,10 @@ CS
     struct GrassData
     {
         float3 Position;
-        float _pad0;
         float3 Normal;
-        float _pad1;
         float4 Color;
         float2 Rotation;
+        float Height;
         float Stiffness;
         float BendAmount;
         float BladeHash;
@@ -98,8 +97,6 @@ CS
 
 	int grassCount <Attribute("GrassCount"); >;
 
-	float time <Attribute("time"); >;
-	
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
 	
 	float subChunkSize < Attribute("SubChunkSize"); >;
@@ -110,11 +107,20 @@ CS
 
    Texture2D terrainControlMap < Attribute("TerrainControlMap"); >;
 
+   Texture2D<float4> GrassInteractionTexture < Attribute("GrassInteractionTexture"); >;
+
+   float playerZPosition < Attribute("PlayerZPosition"); >;
+
     // clang-format on
+
+    float2 GetUVFromWorld(float2 worldPos)
+    {
+        return (worldPos.xy - terrainPosition.xy) / terrainSize.x;
+    }
 
     uint2 WorldToTexel(float2 worldXY, uint texWidth, uint texHeight)
     {
-        float2 uv = (worldXY - terrainPosition.xy) / terrainSize.x;
+        float2 uv = GetUVFromWorld(worldXY);
 
         if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1)
             return uint2(-9999, -9999);
@@ -176,7 +182,7 @@ CS
         // Add clumping behavior - grass tends to grow in similar directions locally
         float2 clumpCenter = floor(grassPosition.xy / 2.0) * 2.0; // 2m clumps
         uint clumpSeed = Hash(uint(clumpCenter.x * 1000.0 + clumpCenter.y * 73856093.0));
-        float clumpAngle = Hash01(clumpSeed + time) * 6.28318;
+        float clumpAngle = Hash01(clumpSeed) * 6.28318;
         float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
 
         // Blend individual and clump facing (more clumped look)
@@ -187,6 +193,17 @@ CS
         grassData.Position = grassPosition;
         grassData.Rotation = facing;
 
+        grassData.Height = Random(seed + bladeHash, 10, 30.3);
+
+        float2 uv = GetUVFromWorld(grassPosition.xy);
+
+        float heightDiff = playerZPosition - grassPosition.z;
+        float heightFade = saturate(1.0 - heightDiff / 50.0);
+
+        float red = GrassInteractionTexture.Sample(g_sBilinearClamp, uv).r * heightFade;
+        
+        grassData.Height = lerp(grassData.Height, red, red);
+        
         float clumpBendBase = lerp(0.5, 1.2, clumpHash);
         grassData.BendAmount = clumpBendBase + (Hash01(index + 444u) - 0.5) * 0.3;
 
@@ -202,7 +219,7 @@ CS
 
     void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
     {
-        const float lodTransitionDist = 1500 + bladeHash * 2000.0f;
+        const float lodTransitionDist = 1500 + bladeHash * 1000;
 
         if (dist < lodTransitionDist)
         {
@@ -297,6 +314,8 @@ CS
         float clumpPull = 0.3; // 0 = no pull, 1 = all blades at center
         worldXY = lerp(worldXY, clumpCenter * clumpScale, clumpPull * (1.0 - clumpDist));
 
+   
+
         float spawnChance = 1.0 - smoothstep(0.6, 1, clumpDist);
 
         if (Hash01(bladeSeed + 777u) > spawnChance)
@@ -326,22 +345,22 @@ CS
 
         float densityThreshold = CalculateDensityThreshold(dist);
 
-        float bladeRandom = Hash01(bladeSeed);
-
+        
         if (Hash01(index) > densityThreshold)
-            return;
-
+         return;
+        
         float texelSizeWorld = terrainSize.x / (texWidth - 1);
-
+        
         TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
-
+        
         if (terrainData.SlopeAngle > 45.0)
-            return;
-
+         return;
+        
         float clumpHash = Hash01(uint(clumpCenter.x * 127 + clumpCenter.y * 311));
-
+        
+        float bladeRandom = Hash01(bladeSeed);
         GrassData grassData = CreateGrassData(bladeSeed, grassPosition, terrainData.Normal, bladeRandom, clumpHash, dist);
 
-        AppendToBuffer(grassData, dist, clumpHash);
+        AppendToBuffer(grassData, dist, bladeRandom + clumpHash);
     }
 }

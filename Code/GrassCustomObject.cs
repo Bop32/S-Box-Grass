@@ -2,6 +2,7 @@ using Sandbox;
 using Sandbox.Rendering;
 using System;
 using System.Drawing;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static Sandbox.VertexLayout;
@@ -20,6 +21,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 		public Vector3 Normal;
 		public Color Color;
 		public Vector2 Rotation;
+		public float Height;
 		public float Stiffness;
 		public float BendAmount;
 		public float BladeHash;
@@ -32,6 +34,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 			Rotation = 0;
 			Color = default;
 			Stiffness = 0;
+			Height = 0;
 			BendAmount = 0;
 			BladeHash = 0;
 			DistanceFromCamera = 0;
@@ -107,13 +110,13 @@ public sealed class GrassCustomObject : SceneCustomObject
 
 	private const int MAX_GRASS_COUNT = 1_000_000;
 
-	PlayerController playerController;
+	PlayerController player;
 
 	public GrassCustomObject( SceneWorld sceneWorld, Grass grass, CameraComponent camera, PlayerController player ) : base( sceneWorld )
 	{
 		grassSettings = grass.GetSettings();
 		this.camera = camera;
-		playerController = player;
+		this.player = player;
 		commandList = new CommandList();
 
 		//totalGrassCount = MAX_GRASS_COUNT;
@@ -183,6 +186,34 @@ public sealed class GrassCustomObject : SceneCustomObject
 		subChunkComputeShader.Attributes.Set( "TerrainSize", new Vector2( grassSettings.Terrain.TerrainSize, grassSettings.Terrain.TerrainHeight ) );
 	}
 
+	private ComputeShader computeShader;
+	Texture grassInteractionTexture;
+	private void CreateInteractionTexture()
+	{
+		if ( grassInteractionTexture == null || !grassInteractionTexture.IsValid )
+		{
+			grassInteractionTexture = Texture.Create( 1024, 1024, ImageFormat.RGBA8888 ).WithUAVBinding().Finish();
+
+			//grassInteractionTexture.Clear( Color.Black );
+
+			computeShader = new( "shaders/GrassInteractionCompute.shader" );
+
+			computeShader.Attributes.Set( "OutputInteractionTexture", grassInteractionTexture );
+			computeShader.Attributes.Set( "TerrainSize", grassSettings.Terrain.TerrainSize );
+			computeShader.Attributes.Set( "TerrainPosition", new Vector2( grassSettings.Terrain.WorldPosition ) );
+			computeShader.Attributes.Set( "TextureSize", grassInteractionTexture.Size );
+		}
+
+		computeShader.Attributes.Set( "Radius", 3.0f );
+		computeShader.Attributes.Set( "PlayerPosition", new Vector2( player.WorldPosition ) );
+		computeShader.Dispatch( grassInteractionTexture.Width, grassInteractionTexture.Height, 1 );
+	}
+
+	public void RenderInteractionTexture()
+	{
+		DebugOverlaySystem.Current.Texture( grassInteractionTexture, new Rect( 10, 300, 512, 512 ), null, 0 );
+	}
+
 	public override void RenderSceneObject()
 	{
 		if ( grassGpuBufferHighLod == null || !grassGpuBufferHighLod.IsValid() ) return;
@@ -193,13 +224,17 @@ public sealed class GrassCustomObject : SceneCustomObject
 		FrustumPlane[] cameraFrustum = GetCameraFrustum();
 
 		chunkComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
-		chunkComputeShader.Attributes.Set( "PlayerPosition", playerController.WorldPosition );
+		chunkComputeShader.Attributes.Set( "PlayerPosition", player.WorldPosition );
 		chunkComputeShader.Dispatch( chunkGpuBuffer.ElementCount, 1, 1 );
 
 		grassGpuBufferHighLod.SetCounterValue( 0 );
 		grassGpuBufferLowLod.SetCounterValue( 0 );
 
+		CreateInteractionTexture();
+
+		grassComputeShader.Attributes.Set( "GrassInteractionTexture", grassInteractionTexture );
 		grassComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
+		grassComputeShader.Attributes.Set( "PlayerZPosition", player.WorldPosition.z);	
 		grassComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 		grassComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
 

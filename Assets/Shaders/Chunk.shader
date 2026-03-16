@@ -76,7 +76,7 @@ CS
         float2 localPlayerPosition = float2(playerPosition.xy - terrainPosition.xy);
         float2 camForward = float2(g_vCameraDirWs.x, g_vCameraDirWs.y);
         float gridExtent = (gridSize * chunkSize) * 0.5f;
-        float2 offsetCenter = localPlayerPosition + camForward * gridExtent * 0.7f;
+        float2 offsetCenter = localPlayerPosition + camForward * gridExtent * 0.5;
 
         int2 playerChunk = int2(floor(offsetCenter.x / chunkSize), floor(offsetCenter.y / chunkSize));
 

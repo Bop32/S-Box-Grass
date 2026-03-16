@@ -9,7 +9,7 @@
 
 class Wind
 {
-    static float CalculateWind(float3 grassPosition)
+    static float CalculateWind(float3 grassPosition, float grassHeight)
     {
         const float flowScale = 0.02f; // Controls size of wind patterns || Lower = bigger, and smoother waves
 
@@ -30,7 +30,7 @@ class Wind
 
         float combinedWind = gustWind * gust.Weight + primaryWind * primary.Weight + largeWind * large.Weight;
 
-        return combinedWind;
+        return combinedWind * normalize(grassHeight);
     }
 };
 

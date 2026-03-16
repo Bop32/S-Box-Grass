@@ -62,11 +62,12 @@ public sealed class Grass : Component
 
 	private CameraComponent camera;
 
+	PlayerController player;
 	protected override void OnEnabled()
 	{
 		camera = GameObject.GetComponent<CameraComponent>();
-		grass = new GrassCustomObject( Scene.SceneWorld, this, camera, Scene.Get<PlayerController>() );
-
+		player = Scene.Get<PlayerController>();
+		grass = new GrassCustomObject( Scene.SceneWorld, this, camera, player );
 		//SimulateChunks();
 	}
 
@@ -124,7 +125,7 @@ public sealed class Grass : Component
 
 	protected override void OnUpdate()
 	{
-		DebugOverlay.Texture( Terrain.ControlMap, new Rect( 0, 300, 512, 512 ) );
+		//grass.RenderInteractionTexture();
 	}
 	protected override void DrawGizmos()
 	{
@@ -133,91 +134,6 @@ public sealed class Grass : Component
 	}
 
 	const float INVALID_HEIGHT = -1.0f;
-	//private void RenderChunksFromCamera()
-	//{
-	//	int gridSize = WorldChunksPerRow;
-
-	//	float chunkSize = 700;
-	//	Vector3 playerPosition = Scene.Get<PlayerController>().WorldPosition;
-
-	//	float baseX = MathF.Floor( playerPosition.x / chunkSize );
-	//	float baseY = MathF.Floor( playerPosition.y / chunkSize );
-
-	//	int half = gridSize / 2;
-
-	//	int chunkCount = 1;
-
-	//	for ( int ix = 0; ix < gridSize; ix++ )
-	//	{
-	//		for ( int iy = 0; iy < gridSize; iy++ )
-	//		{
-	//			int x = ix - half;
-	//			int y = iy - half;
-
-	//			float worldX = (baseX + x) * chunkSize + chunkSize * 0.5f;
-	//			float worldY = (baseY + y) * chunkSize + chunkSize * 0.5f;
-	//			float worldZ = Terrain.WorldPosition.z;
-
-	//			Vector3 chunkCenter = new Vector3( worldX, worldY, worldZ );
-
-	//			float height = GetHeightValue( chunkCenter, half );
-
-	//			if ( height == INVALID_HEIGHT ) continue;
-
-	//			Vector3 min = new Vector3( worldX - chunkSize * 0.5f, worldY - chunkSize * 0.5f, worldZ + height );
-	//			Vector3 max = new Vector3( worldX + chunkSize * 0.5f, worldY + chunkSize * 0.5f, worldZ + height + 50 );
-
-	//			Color visibleChunksColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
-
-	//			BBox box = new( min, max );
-	//			DebugOverlay.Box( box, visibleChunksColor );
-	//			DebugOverlay.Text( box.Center.WithZ( box.Center.z + 25 ), $"{chunkCount}", 100 );
-
-	//			chunkCount++;
-	//		}
-	//	}
-	//}
-
-	//private void RenderChunksFromCamera()
-	//{
-	//	Vector2 chunkSize = new Vector2( 700, 700 );
-	//	CameraComponent camera = GetComponent<CameraComponent>();
-	//	Vector3 cameraPosition = camera.WorldPosition;
-	//	float worldZ = Terrain.WorldPosition.z;
-
-	//	float fov = camera.FieldOfView;
-	//	int rayCount = 30;
-	//	int stepsPerRay = WorldChunksPerRow / 2;
-
-	//	HashSet<(int, int)> visited = new();
-
-	//	for ( int r = 0; r < rayCount; r++ )
-	//	{
-	//		float angle = MathX.Lerp( -fov * 0.5f, fov * 0.5f, r / (float)(rayCount - 1) );
-	//		Rotation rayDir = camera.WorldRotation * Rotation.FromAxis( Vector3.Up, angle ).Normal;
-
-	//		for ( int s = 1; s <= stepsPerRay; s++ )
-	//		{
-	//			Vector3 worldPos = cameraPosition + rayDir.Forward * s * chunkSize.x;
-
-	//			int cx = (int)MathF.Floor( worldPos.x / chunkSize.x );
-	//			int cy = (int)MathF.Floor( worldPos.y / chunkSize.y );
-
-	//			if ( !visited.Add( (cx, cy) ) ) continue;
-
-	//			float worldX = cx * chunkSize.x + chunkSize.x * 0.5f;
-	//			float worldY = cy * chunkSize.y + chunkSize.y * 0.5f;
-	//			Vector3 chunkCenter = new Vector3( worldX, worldY, worldZ );
-
-	//			float height = GetHeightValue( chunkCenter, stepsPerRay );
-	//			Vector3 min = new Vector3( worldX - chunkSize.x * 0.5f, worldY - chunkSize.y * 0.5f, worldZ + height );
-	//			Vector3 max = new Vector3( worldX + chunkSize.x * 0.5f, worldY + chunkSize.y * 0.5f, worldZ + height + 50 );
-
-	//			Color visibleChunksColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
-	//			DebugOverlay.Box( new BBox( min, max ), visibleChunksColor );
-	//		}
-	//	}
-	//}
 
 	private void RenderChunks()
 	{
@@ -230,13 +146,13 @@ public sealed class Grass : Component
 
 		if ( camera == null ) camera = GameObject.GetComponent<CameraComponent>();
 
-		PlayerController player = Scene.Get<PlayerController>();
+		if ( player == null ) player = Scene.Get<PlayerController>();
 
 		Vector2 localPlayerPos = new Vector2( player.WorldPosition ) - new Vector2( Terrain.WorldPosition );
 		Vector2 camForward = new Vector2( camera.WorldRotation.Forward ).Normal;
 		float gridExtent = WorldChunksPerRow * chunkSize * 0.5f;
 
-		Vector2 offsetCenter = localPlayerPos + camForward * gridExtent * 0.7f;
+		Vector2 offsetCenter = localPlayerPos + camForward * gridExtent * 0.5;
 
 		Vector2Int playerChunk = new Vector2Int( (int)MathF.Floor( offsetCenter.x / chunkSize ), (int)MathF.Floor( offsetCenter.y / chunkSize ) );
 
@@ -266,7 +182,7 @@ public sealed class Grass : Component
 
 			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
 
-			//DebugOverlay.Box( new BBox( min, max ), visibleColor );
+			DebugOverlay.Box( new BBox( min, max ), visibleColor );
 			//RenderSubChunks( chunkPosition, chunkSize, i );
 		}
 	}

@@ -673,12 +673,17 @@
       "AgentStepSize": 18,
       "AgentMaxSlope": 40,
       "ExcludedBodies": "",
-      "IncludedBodies": ""
+      "IncludedBodies": "",
+      "CustomBounds": false,
+      "Bounds": {
+        "Mins": "0,0,0",
+        "Maxs": "0,0,0"
+      }
     },
     "GameObjectSystems": {
       "Sandbox.Clutter.ClutterGridSystem": {
         "Storage": {
-          "$blob": "679c917d-91cf-4d07-b693-120ff7b89237"
+          "$blob": "6729115e-ccfe-4e61-a1d4-f4da7f818b8e"
         }
       }
     }

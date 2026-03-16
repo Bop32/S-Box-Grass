@@ -32,4 +32,20 @@ float2 Random2(uint seed, float minVal, float maxVal)
     return float2(minVal + Hash01(seed) * (maxVal - minVal), minVal + Hash01(seed + 1u) * (maxVal - minVal));
 }
 
+float EaseInQuad(float t)
+{
+    return t * t;
+}
+
+float EaseInCubic(float t)
+{
+    return t * t * t;
+}
+
+float EaseOutElastic(float t)
+{
+    float c4 = (2.0 * 3.14159) / 3.0;
+    return t == 0.0 ? 0.0 : t == 1.0 ? 1.0 : pow(2.0, -10.0 * t) * sin((t * 10.0 - 0.75) * c4) + 1.0;
+}
+
 #endif 
