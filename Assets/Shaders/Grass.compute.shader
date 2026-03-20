@@ -10,19 +10,20 @@ CS
     #include "system.fxc"
     #include "common/shared.hlsl"
     #include "utilities.hlsl"
+    #include "procedural.hlsl"
 
     // clang-format on
     struct GrassData
     {
         float3 Position;
         float3 Normal;
-        float4 Color;
         float2 Rotation;
+        uint ClumpSeed;
         float Height;
         float Stiffness;
         float BendAmount;
         float BladeHash;
-        float DistanceFromCamera;
+        float DistanceFromPlayer;
     };
 
     struct ChunkData
@@ -91,25 +92,19 @@ CS
 
 	RWStructuredBuffer<ChunkData> chunkBuffer <Attribute("ChunkData"); >;
 
-	int subChunkCountPerChunk <Attribute("SubChunkCountPerChunk"); >;
-
 	Texture2D<float> _HeightMap <Attribute("HeightMap"); >;
 
 	int grassCount <Attribute("GrassCount"); >;
 
 	float3 terrainPosition < Attribute("TerrainPosition"); >;
 	
-	float subChunkSize < Attribute("SubChunkSize"); >;
-
 	int totalChunks < Attribute("TotalWorldChunks"); >;
 
 	float2 terrainSize <Attribute("TerrainSize"); >;
 
    Texture2D terrainControlMap < Attribute("TerrainControlMap"); >;
 
-   Texture2D<float4> GrassInteractionTexture < Attribute("GrassInteractionTexture"); >;
-
-   float playerZPosition < Attribute("PlayerZPosition"); >;
+   float3 playerPosition < Attribute("PlayerPosition"); >;
 
     // clang-format on
 
@@ -167,21 +162,23 @@ CS
 
     float CalculateDensityThreshold(float dist)
     {
-        const float startDistance = 100;
+        const float startDistance = 2000;
         const float endDistance = 10000;
-        return 1.0 - saturate((dist - startDistance) / (endDistance - startDistance));
+
+        float t = saturate((dist - startDistance) / (endDistance - startDistance));
+
+        return pow(1.0 - t, 4.0);
     }
 
-    GrassData CreateGrassData(uint index, float3 grassPosition, float3 normal, float bladeHash, float clumpHash, float dist)
+    GrassData CreateGrassData(uint cellSeed, float3 grassPosition, float3 normal, float bladeHash, float clumpHash, float dist)
     {
-        uint seed = index;
-
-        float facingAngle = Hash01(seed * 7919u) * 6.28318; // 0‑2π
+        float facingAngle = Hash01(cellSeed * 7919u) * 6.28318; // 0‑2π
         float2 facing = float2(cos(facingAngle), sin(facingAngle));
 
-        // Add clumping behavior - grass tends to grow in similar directions locally
-        float2 clumpCenter = floor(grassPosition.xy / 2.0) * 2.0; // 2m clumps
-        uint clumpSeed = Hash(uint(clumpCenter.x * 1000.0 + clumpCenter.y * 73856093.0));
+        const uint clumpSize = 40;
+        int2 cell = int2(floor(grassPosition.xy / clumpSize)); 
+        uint combined = (uint(cell.x) * 73856093u) ^ (uint(cell.y) * 19349663u);
+        uint clumpSeed = Hash(combined);
         float clumpAngle = Hash01(clumpSeed) * 6.28318;
         float2 clumpFacing = float2(cos(clumpAngle), sin(clumpAngle));
 
@@ -193,33 +190,26 @@ CS
         grassData.Position = grassPosition;
         grassData.Rotation = facing;
 
-        grassData.Height = Random(seed + bladeHash, 10, 30.3);
-
+        grassData.Height = Random(cellSeed + bladeHash, 10, 30.3);
+        grassData.ClumpSeed = clumpSeed;
         float2 uv = GetUVFromWorld(grassPosition.xy);
 
-        float heightDiff = playerZPosition - grassPosition.z;
-        float heightFade = saturate(1.0 - heightDiff / 50.0);
-
-        float red = GrassInteractionTexture.Sample(g_sBilinearClamp, uv).r * heightFade;
-        
-        grassData.Height = lerp(grassData.Height, red, red);
-        
         float clumpBendBase = lerp(0.5, 1.2, clumpHash);
-        grassData.BendAmount = clumpBendBase + (Hash01(index + 444u) - 0.5) * 0.3;
+        grassData.BendAmount = clumpBendBase + (Hash01(cellSeed + 444u) - 0.5) * 0.3;
 
         float clumpStiffnessBase = lerp(0.4, 0.8, clumpHash);
-        grassData.Stiffness = clumpStiffnessBase + (Hash01(index + 333u) - 0.5) * 0.2;
+        grassData.Stiffness = clumpStiffnessBase + (Hash01(cellSeed + 333u) - 0.5) * 0.2;
 
         grassData.Normal = normal;
         grassData.BladeHash = bladeHash + clumpHash;
-        grassData.DistanceFromCamera = dist;
+        grassData.DistanceFromPlayer = dist;
 
         return grassData;
     }
 
     void AppendToBuffer(GrassData grassData, float dist, float bladeHash)
     {
-        const float lodTransitionDist = 1500 + bladeHash * 1000;
+        const float lodTransitionDist = 1500 + bladeHash * 500;
 
         if (dist < lodTransitionDist)
         {
@@ -241,8 +231,10 @@ CS
         float minDist = 9999.0;
         float2 closestPoint = float2(0, 0);
 
+        [unroll]
         for (int y = -1; y <= 1; y++)
         {
+            [unroll]
             for (int x = -1; x <= 1; x++)
             {
                 float2 neighbor = float2(x, y);
@@ -273,9 +265,9 @@ CS
         if (index >= grassCount)
             return;
 
-        uint bladesPerChunk = 8000;
+        uint bladesPerChunk = 20000;
 
-        float cellSize = 700 / sqrt((float)bladesPerChunk);
+        float cellSize = 1000 / sqrt((float)bladesPerChunk);
 
         uint chunkIndex = index / bladesPerChunk;
         uint localIndex = index % bladesPerChunk;
@@ -293,16 +285,16 @@ CS
         uint cellX = localIndex % cellsPerRow;
         uint cellY = localIndex / cellsPerRow;
 
-        int worldCellX = chunk.Grid.x * cellsPerRow + cellX;
-        int worldCellY = chunk.Grid.y * cellsPerRow + cellY;
+        int worldCellX = (int)floor((chunk.Position.x + cellX * cellSize) / cellSize);
+        int worldCellY = (int)floor((chunk.Position.y + cellY * cellSize) / cellSize);
 
-        uint bladeSeed = (uint)(worldCellX * 73856093) ^ (uint)(worldCellY * 19349663);
+        uint cellSeed = (uint)(worldCellX * 73856093) ^ (uint)(worldCellY * 19349663);
 
         float2 chunkMin = chunk.Position - chunk.Size * 0.5;
 
         float2 basePos = chunkMin + float2(cellX * cellSize, cellY * cellSize);
 
-        float2 jitter = float2((Hash01(bladeSeed + 111u) - 0.5f) * cellSize, (Hash01(bladeSeed + 222u) - 0.5f) * cellSize);
+        float2 jitter = float2((Hash01(cellSeed + 111u) - 0.5f) * cellSize, (Hash01(cellSeed + 222u) - 0.5f) * cellSize);
 
         float2 worldXY = basePos + jitter;
 
@@ -314,11 +306,9 @@ CS
         float clumpPull = 0.3; // 0 = no pull, 1 = all blades at center
         worldXY = lerp(worldXY, clumpCenter * clumpScale, clumpPull * (1.0 - clumpDist));
 
-   
+        float spawnChance = 1.0 - smoothstep(1.0, 2, clumpDist);
 
-        float spawnChance = 1.0 - smoothstep(0.6, 1, clumpDist);
-
-        if (Hash01(bladeSeed + 777u) > spawnChance)
+        if (Hash01(index + 777u) >= spawnChance)
             return;
 
         uint texWidth, texHeight;
@@ -333,10 +323,10 @@ CS
 
         float3 grassPosition = float3(worldXY.xy, height + terrainPosition.z);
 
-        if (!PositionVisibleAt(grassPosition))
-            return;
+          if (!PositionVisibleAt(grassPosition))
+              return;
 
-        float dist = distance(g_vCameraPositionWs, grassPosition);
+        float dist = distance(playerPosition.xy, grassPosition.xy);
 
         const float endDistance = 10000;
 
@@ -345,21 +335,20 @@ CS
 
         float densityThreshold = CalculateDensityThreshold(dist);
 
-        
-        if (Hash01(index) > densityThreshold)
-         return;
-        
+        if (Hash01(index + 777u) > densityThreshold)
+            return;
+
         float texelSizeWorld = terrainSize.x / (texWidth - 1);
-        
+
         TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
-        
+
         if (terrainData.SlopeAngle > 45.0)
-         return;
-        
+            return;
+
         float clumpHash = Hash01(uint(clumpCenter.x * 127 + clumpCenter.y * 311));
-        
-        float bladeRandom = Hash01(bladeSeed);
-        GrassData grassData = CreateGrassData(bladeSeed, grassPosition, terrainData.Normal, bladeRandom, clumpHash, dist);
+
+        float bladeRandom = Hash01(cellSeed);
+        GrassData grassData = CreateGrassData(cellSeed, grassPosition, terrainData.Normal, bladeRandom, clumpHash, dist);
 
         AppendToBuffer(grassData, dist, bladeRandom + clumpHash);
     }

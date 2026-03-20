@@ -146,7 +146,7 @@
       "__version": 2,
       "Flags": 0,
       "Name": "Camera",
-      "Position": "1454.187,3063.147,1364.082",
+      "Position": "2421.965,2378.927,5437.643",
       "Rotation": "0.07265832,0.1129979,-0.06981468,0.9884727",
       "Scale": "1,1,1",
       "Tags": "",
@@ -247,17 +247,15 @@
           "ClumpSize": 15,
           "ClumpStrength": 5,
           "ControlMap": "materials/export - copy.vtex",
-          "GrassCountPerChunk": 100000,
           "HighLodGrassModel": "models/grass.vmdl",
           "LowLodGrassModel": "models/grasslod.vmdl",
-          "MaxNumberOfUsableChunks": 4,
+          "MaxGrassCount": 1000000,
           "OnComponentDestroy": null,
           "OnComponentDisabled": null,
           "OnComponentEnabled": null,
           "OnComponentFixedUpdate": null,
           "OnComponentStart": null,
           "OnComponentUpdate": null,
-          "SubChunksPerRow": 4,
           "Terrain": {
             "_type": "component",
             "component_id": "26ef65ad-2471-4b8a-915b-92636bbeb819",
@@ -317,7 +315,7 @@
           "SubdivisionLodCount": 3,
           "Surface": null,
           "SurfaceVelocity": "0,0,0",
-          "TerrainHeight": 1,
+          "TerrainHeight": 10000,
           "TerrainSize": 20000
         }
       ],
@@ -328,7 +326,7 @@
       "__version": 2,
       "Flags": 0,
       "Name": "Player Controller",
-      "Position": "1846.057,880.559,1021.724",
+      "Position": "3503.262,6134.002,1854.296",
       "Rotation": "-0.0002841181,0.001366877,-0.02614842,0.9996569",
       "Scale": "1,1,1",
       "Tags": "",
@@ -512,6 +510,7 @@
           "OnComponentFixedUpdate": null,
           "OnComponentStart": null,
           "OnComponentUpdate": null,
+          "RemoveUnownedItems": true,
           "Source": "OwnerConnection",
           "WorkshopItems": []
         }
@@ -674,16 +673,12 @@
       "AgentMaxSlope": 40,
       "ExcludedBodies": "",
       "IncludedBodies": "",
-      "CustomBounds": false,
-      "Bounds": {
-        "Mins": "0,0,0",
-        "Maxs": "0,0,0"
-      }
+      "CustomBounds": false
     },
     "GameObjectSystems": {
       "Sandbox.Clutter.ClutterGridSystem": {
         "Storage": {
-          "$blob": "6729115e-ccfe-4e61-a1d4-f4da7f818b8e"
+          "$blob": "36dec895-2c28-4731-896c-c646877f1f33"
         }
       }
     }

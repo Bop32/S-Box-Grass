@@ -18,9 +18,10 @@ float Hash01(uint n)
 
 float2 Hash02(uint n)
 {
-    uint h = Hash(n);
+    uint h = Hash(n);   
     return float2((h & 0xFFFFu), (h >> 16)) / 65535.0;
 }
+
 
 float Random(uint seed, float minVal, float maxVal)
 {

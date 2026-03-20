@@ -11,9 +11,7 @@ public struct GrassSettings
 	public Model LowLodGrassModel { get; set; }
 	public Terrain Terrain { get; set; }
 	public int WorldChunksPerRow { get; set; }
-	public int SubChunksPerRow { get; set; }
-	public int MaxNumberOfUsableChunks { get; set; }
-	public int GrassCountPerChunk { get; set; }
+	public int MaxGrassCount { get; set; }
 	public Vector2 ChunkSize { get; set; }
 	public float ClumpStrength { get; set; }
 	public float ClumpSize { get; set; }
@@ -39,13 +37,7 @@ public sealed class Grass : Component
 	public int WorldChunksPerRow { get; set; }
 
 	[Property]
-	public int SubChunksPerRow { get; set; }
-
-	[Property]
-	public int MaxNumberOfUsableChunks { get; set; } = 4;
-
-	[Property]
-	public int GrassCountPerChunk { get; set; }
+	public int MaxGrassCount { get; set; } = 1000000;
 
 	[Property]
 	public float ClumpStrength { get; set; } = 5.0f;
@@ -79,10 +71,8 @@ public sealed class Grass : Component
 			LowLodGrassModel = LowLodGrassModel,
 			Terrain = Terrain,
 
-			GrassCountPerChunk = GrassCountPerChunk,
-			SubChunksPerRow = SubChunksPerRow,
+			MaxGrassCount = MaxGrassCount,
 			WorldChunksPerRow = WorldChunksPerRow,
-			MaxNumberOfUsableChunks = MaxNumberOfUsableChunks,
 
 			ClumpStrength = ClumpStrength,
 			ClumpSize = ClumpSize,
@@ -94,7 +84,7 @@ public sealed class Grass : Component
 	{
 		Vector2 uv = (worldXY - new Vector2( Terrain.WorldPosition )) / Terrain.TerrainSize;
 
-		if ( uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 ) return new Vector2( -9999 );
+		if ( uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f ) return new Vector2( -9999 );
 
 		int x = (int)(uv.x * (texWidth - 1));
 		int y = (int)(uv.y * (texHeight - 1));
@@ -140,7 +130,7 @@ public sealed class Grass : Component
 		float terrainSize = Terrain.TerrainSize;
 		float terrainHeight = Terrain.TerrainHeight;
 
-		float chunkSize = 700.0f;//terrainSize / WorldChunksPerRow;
+		float chunkSize = 1000;
 		float halfChunkSize = chunkSize * 0.5f;
 		Vector3 terrainWorldPosition = Terrain.WorldPosition;
 
@@ -148,34 +138,28 @@ public sealed class Grass : Component
 
 		if ( player == null ) player = Scene.Get<PlayerController>();
 
-		Vector2 localPlayerPos = new Vector2( player.WorldPosition ) - new Vector2( Terrain.WorldPosition );
-		Vector2 camForward = new Vector2( camera.WorldRotation.Forward ).Normal;
-		float gridExtent = WorldChunksPerRow * chunkSize * 0.5f;
+		Vector2 localPlayerPos = new Vector2( player.WorldPosition ) - new Vector2( terrainWorldPosition );
 
-		Vector2 offsetCenter = localPlayerPos + camForward * gridExtent * 0.5;
-
-		Vector2Int playerChunk = new Vector2Int( (int)MathF.Floor( offsetCenter.x / chunkSize ), (int)MathF.Floor( offsetCenter.y / chunkSize ) );
+		Vector2 offsetCenter = localPlayerPos;// + camForward * gridExtent * 0.1f;								
 
 		int totalChunks = WorldChunksPerRow * WorldChunksPerRow;
 		int halfGrid = WorldChunksPerRow / 2;
 
-
+		Vector3 terrainCenter = terrainWorldPosition + new Vector3( Terrain.TerrainSize, Terrain.TerrainHeight, 0 ) * 0.5f;
 		for ( int i = 0; i < totalChunks; i++ )
 		{
 			int localX = (i % WorldChunksPerRow) - halfGrid;
 			int localY = (i / WorldChunksPerRow) - halfGrid;
 
-			Vector2Int gridCoord = playerChunk + new Vector2Int( localX, localY );
-
-			float x = Terrain.WorldPosition.x + gridCoord.x * chunkSize + chunkSize * 0.5f;
-			float y = Terrain.WorldPosition.y + gridCoord.y * chunkSize + chunkSize * 0.5f;
+			float x = terrainCenter.x + localX * chunkSize + chunkSize * 0.5f;
+			float y = terrainCenter.x + localY * chunkSize + chunkSize * 0.5f;
 			float z = terrainWorldPosition.z;
 
 			Vector3 chunkPosition = new Vector3( x, y, z );
 
-			float height = GetHeightValue( chunkPosition, halfChunkSize );
+			float height = GetHeightValueIgnoreOutOfBounds( chunkPosition, halfChunkSize );
 
-			if ( height < 0 ) continue;
+			//if ( height < 0 ) continue;
 
 			Vector3 min = new Vector3( chunkPosition.x - halfChunkSize, chunkPosition.y - halfChunkSize, z + height - 50 );
 			Vector3 max = new Vector3( chunkPosition.x + halfChunkSize, chunkPosition.y + halfChunkSize, z + height + 50 );
@@ -183,6 +167,7 @@ public sealed class Grass : Component
 			Color visibleColor = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? Color.Green : Color.Red;
 
 			DebugOverlay.Box( new BBox( min, max ), visibleColor );
+			DebugOverlay.Text( chunkPosition.WithZ( chunkPosition.z + height + 50 ), $"Chunk {i}", 256 );
 			//RenderSubChunks( chunkPosition, chunkSize, i );
 		}
 	}
@@ -206,51 +191,6 @@ public sealed class Grass : Component
 			MathF.Max( SampleHeightCPU( topLeftTexel ), SampleHeightCPU( topRightTexel ) ) );
 
 		return height;
-	}
-
-	private void RenderSubChunks( Vector3 chunkPosition, Vector2 chunkSize, int index )
-	{
-		Vector2 subChunkSize = new Vector2( chunkSize / SubChunksPerRow );
-
-		Vector3 startSubChunkPosition = new Vector3( chunkPosition.x - chunkSize.x / 2, chunkPosition.y - chunkSize.y / 2, chunkPosition.z );
-
-		uint textureWidth = (uint)Terrain.HeightMap.Width;
-		uint textureHeight = (uint)Terrain.HeightMap.Height;
-
-		for ( int i = 0; i < SubChunksPerRow * SubChunksPerRow; i++ )
-		{
-			int offsetX = i % SubChunksPerRow;
-			int offsetY = i / SubChunksPerRow;
-
-			float x = startSubChunkPosition.x + (offsetX + 0.5f) * subChunkSize.x;
-			float y = startSubChunkPosition.y + (offsetY + 0.5f) * subChunkSize.y;
-			float z = startSubChunkPosition.z;
-
-			Vector3 subChunkPosition = new Vector3( x, y, z );
-
-			if ( Vector3.DistanceBetween( subChunkPosition, Gizmo.Camera.Position ) > 6000.0f ) continue;
-
-			Vector2 half = subChunkSize * 0.5f;
-
-			float height = GetHeightValue( subChunkPosition, half );
-
-			Vector3 min = new Vector3( subChunkPosition.x - subChunkSize.x * 0.5f + 1.0f, subChunkPosition.y - subChunkSize.y * 0.5f, z + height * 0.5f );
-			Vector3 max = new Vector3( subChunkPosition.x + subChunkSize.x * 0.5f, subChunkPosition.y + subChunkSize.y * 0.5f, Terrain.WorldPosition.z + height );
-
-			Vector3 cameraPos = Gizmo.Camera.Position;
-			float distance = Vector3.DistanceBetween( min, cameraPos );
-			float zOffset = distance * 0.005f;
-			float xOffset = distance * 0.005f;
-			min.z -= zOffset;
-			min.x += xOffset;
-
-			string visible = AABBInsideFrustum( min, max, GetCameraFrustum() ) ? "Visible" : "Not Visible";
-
-			BBox box = new( min, max );
-
-			DebugOverlay.Text( box.Center.WithZ( box.Center.z + min.z * 0.5f ), visible, 256 );
-			DebugOverlay.Box( box, GetChunkColor( offsetX + index, offsetY + index ) );
-		}
 	}
 
 	private Color GetChunkColor( int offsetX, int offsetY )

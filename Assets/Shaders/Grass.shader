@@ -25,16 +25,17 @@ COMMON
     {
         float3 Position;
         float3 Normal;
-        float4 Color;
         float2 Rotation;
+        uint ClumpSeed;
         float Height;
         float Stiffness;
         float BendAmount;
         float BladeHash;
-        float DistanceFromCamera;
+        float DistanceFromPlayer;
     };
 
     StructuredBuffer<GrassData> GrassInstanceData < Attribute("GrassData");> ;
+    float3 PlayerPosition < Attribute("PlayerPosition"); > ;
 }
 
 struct VertexInput
@@ -105,36 +106,43 @@ VS
         o.nInstanceID = i.nInstanceID;
 
         float3 vertex = i.Position;
-
         float horizontalOffset = vertex.x - 0.5;
+
+        float radius = 20.0;
+        float bendAwayStrength = max(radius - grass.DistanceFromPlayer, 0.0) / radius;
+        float2 bendDirection = normalize(PlayerPosition.xy - grass.Position.xy);
 
         float heightNorm = saturate(vertex.z / 28.3);
 
-        float t = heightNorm;
         float3 P0 = float3(0, 0, 0);
         float3 P1 = float3(0, 0, 15);
         float3 P2 = float3(0, 28.3 * grass.BendAmount, grass.Height);
-        float3 curve = BezierQuadratic(P0, P1, P2, t);
+        float3 curve = BezierQuadratic(P0, P1, P2, heightNorm);
 
         vertex.y = curve.y;
         vertex.z = curve.z;
 
+        // This is for some like push for when grass is near the player for some reaction. Tried to make it bend the other way but for the life of me couldn't figure it out
+        float bendOffset = bendAwayStrength * heightNorm * heightNorm * 10;
+        vertex.x += bendDirection.x * bendOffset;
+        vertex.y += bendDirection.y * bendOffset;
+        vertex.z -= bendAwayStrength * heightNorm;
+
         vertex.x *= 1.5f;
 
         vertex = ApplyYaw(vertex, grass.Rotation);
-        float3 surfaceNormal = grass.Normal;
 
-        
+        float3 surfaceNormal = grass.Normal;
         float3 surfaceTangent, surfaceBitangent;
         BuildSurfaceFrame(surfaceNormal, surfaceTangent, surfaceBitangent);
-        
-        if (grass.DistanceFromCamera > 1500 + grass.BladeHash * 1000)
+
+        if (grass.DistanceFromPlayer > 1500 + grass.BladeHash * 500)
         {
-            vertex.x *= 5.0;
+            float d = saturate(grass.DistanceFromPlayer / 5000);
+            vertex.xy *= lerp(1.0, 2.0, d);
             float3 worldVertex = ToWorldSpace(vertex, surfaceTangent, surfaceBitangent, surfaceNormal);
             o.WorldPos = grass.Position + worldVertex;
 
-            
             o.Position = Position3WsToPs(o.WorldPos);
             o.Normal.xyz = surfaceNormal;
             o.Normal.w = Wind::CalculateWind(grass.Position, grass.Height);
@@ -144,14 +152,13 @@ VS
             return o;
         }
 
-        float3 tangent = normalize(BezierQuadraticDerivative(P0, P1, P2, t));
+        float3 tangent = normalize(BezierQuadraticDerivative(P0, P1, P2, heightNorm));
         tangent = ApplyYaw(tangent, grass.Rotation);
 
         float3 worldTangent = normalize(ToWorldSpace(tangent, surfaceTangent, surfaceBitangent, surfaceNormal));
         float3 localWidthDir = normalize(float3(grass.Rotation.x, grass.Rotation.y, 0));
         float3 worldWidthDir = normalize(cross(worldTangent, surfaceNormal));
         float3 worldNormal = normalize(cross(worldTangent, worldWidthDir));
-
 
         float wind = Wind::CalculateWind(grass.Position, grass.Height);
         float flexibility = 1.0 - grass.Stiffness;
@@ -214,7 +221,8 @@ PS
             grassTip *= 0.8;
         }
 
-        float dryness = Hash01(grass.BladeHash + 999u) * 0.2;
+        float dryness = Hash01(grass.ClumpSeed) * 0.5;
+
         float3 dryColor = float3(0.4, 0.5, 0.1);
 
         float random = frac(sin(grass.BladeHash * 12.9898) * 43758.5453);
