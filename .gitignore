@@ -27,3 +27,6 @@ code/Properties/*
 
 # Exported / standalone games
 Exports/
+/Assets/Shaders/Depth.shader
+/Assets/Shaders/depth.shader_c
+/Code/ShowDepth.cs
