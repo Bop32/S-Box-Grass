@@ -221,18 +221,18 @@ PS
             grassTip *= 0.8;
         }
 
-        float dryness = Hash01(grass.ClumpSeed) * 0.5;
+        float dryness = Hash01(grass.ClumpSeed);
 
         float3 dryColor = float3(0.4, 0.5, 0.1);
 
         float random = frac(sin(grass.BladeHash * 12.9898) * 43758.5453);
-        float3 baseColor = lerp(grassDark, grassLight, random + i.Normal.w * 0.2 + 0.5);
+        float3 baseColor = lerp(grassDark, grassLight, random + i.Normal.w * 0.2 + 0.3);
         baseColor = lerp(baseColor, dryColor, dryness * i.Height);
         float3 Albedo = lerp(baseColor, grassTip, i.Height * i.Height * random);
 
-        Light sun = Light::From(i.Position.xyz, float4(i.WorldPos, 1), 0);
+        float3 sunColor = g_DirectionalLightColor.rgb;
 
-        float3 L = normalize(sun.Direction);
+        float3 L = normalize(g_DirectionalLightDirection.xyz);
         float3 N = normal;
         float NdotL = saturate(dot(N, L));
 
@@ -245,15 +245,16 @@ PS
         float3 groundColor = float3(0.1, 0.15, 0.05);
         float hemi = dot(N, float3(0, 0, 1)) * 0.5 + 0.5;
 
-        float3 ambient = lerp(groundColor, skyColor, hemi) * Albedo * sun.Color;
+        float3 ambient = lerp(groundColor, skyColor, hemi) * Albedo * sunColor;
 
         float3 viewDir = normalize(g_vCameraPositionWs - i.WorldPos);
         float3 transDir = normalize(L + N * 0.3);
         float transDot = saturate(dot(viewDir, -transDir));
-        float3 translucency = Albedo * sun.Color * pow(transDot, 6.0) * 0.15 * i.Height;
+        float3 translucency = Albedo * sunColor * pow(transDot, 6.0) * 0.15 * i.Height;
 
         float ao = lerp(0.3, 1.0, i.Height);
-        float3 finalLight = (Albedo * diffuse * sun.Color + ambient) * ao + translucency;
+        float3 finalLight = (Albedo * diffuse * sunColor + ambient) * ao + translucency;
+
         return float4(finalLight, 1.0);
     }
 }

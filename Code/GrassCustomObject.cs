@@ -177,11 +177,12 @@ public sealed class GrassCustomObject : SceneCustomObject
 		chunkComputeShader.Attributes.Set( "PlayerPosition", player.WorldPosition );
 		chunkComputeShader.Dispatch( chunkGpuBuffer.ElementCount, 1, 1 );
 
+
 		grassGpuBufferHighLod.SetCounterValue( 0 );
 		grassGpuBufferLowLod.SetCounterValue( 0 );
 
 		grassComputeShader.Attributes.Set( "ChunkData", chunkGpuBuffer );
-		grassComputeShader.Attributes.Set( "PlayerPosition", player.WorldPosition);	
+		grassComputeShader.Attributes.Set( "PlayerPosition", player.WorldPosition );
 		grassComputeShader.Attributes.SetData( "FrustumPlanes", cameraFrustum );
 		grassComputeShader.Attributes.Set( "CameraPosition", camera.WorldPosition );
 
@@ -190,7 +191,7 @@ public sealed class GrassCustomObject : SceneCustomObject
 		commandList.Attributes.Set( "CameraPosition", camera.WorldPosition );
 		InstanceGrass( grassSettings.HighLodGrassModel, grassGpuBufferHighLod, highLodIndirectBuffer );
 		InstanceGrass( grassSettings.LowLodGrassModel, grassGpuBufferLowLod, lowLodIndirectBuffer );
-
+		
 		camera.AddCommandList( commandList, Stage.AfterTransparent, 0 );
 
 		RenderDebugText();

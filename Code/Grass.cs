@@ -19,7 +19,7 @@ public struct GrassSettings
 	public Texture ControlMap { get; set; }
 }
 
-public sealed class Grass : Component
+public sealed class Grass : Component 
 {
 
 	[Property]

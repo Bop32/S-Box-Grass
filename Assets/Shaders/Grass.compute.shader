@@ -65,11 +65,8 @@ CS
         return true;
     }
 
-    bool PositionVisibleAt(float3 pos)
+    bool IsOccluded(float3 pos, float3 normal)
     {
-        if (!InsideCameraFrustrum(pos))
-            return false;
-
         float4 clipPos = Position3WsToPs(pos);
 
         clipPos.xyz /= clipPos.w;
@@ -80,8 +77,10 @@ CS
 
         float flDepth = Depth::Normalize(g_tDepthChain.SampleLevel(g_sPointWrap, uv, 5.0f).x);
 
-        if (flDepth > clipPos.z)
-            return false; // culled by depth
+        float slopeBias = saturate(dot(normal, float3(0, 0, 1))) * 0.01f; // more bias on flatter surfaces
+
+        if (flDepth - slopeBias <= clipPos.z)
+            return false;
 
         return true;
     }
@@ -176,7 +175,7 @@ CS
         float2 facing = float2(cos(facingAngle), sin(facingAngle));
 
         const uint clumpSize = 40;
-        int2 cell = int2(floor(grassPosition.xy / clumpSize)); 
+        int2 cell = int2(floor(grassPosition.xy / clumpSize));
         uint combined = (uint(cell.x) * 73856093u) ^ (uint(cell.y) * 19349663u);
         uint clumpSeed = Hash(combined);
         float clumpAngle = Hash01(clumpSeed) * 6.28318;
@@ -323,8 +322,18 @@ CS
 
         float3 grassPosition = float3(worldXY.xy, height + terrainPosition.z);
 
-          if (!PositionVisibleAt(grassPosition))
-              return;
+        if (!InsideCameraFrustrum(grassPosition))
+            return;
+
+        float texelSizeWorld = terrainSize.x / (texWidth - 1);
+
+        TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
+
+        if (terrainData.SlopeAngle > 45.0)
+            return;
+
+        if (IsOccluded(grassPosition, terrainData.Normal))
+            return;
 
         float dist = distance(playerPosition.xy, grassPosition.xy);
 
@@ -336,13 +345,6 @@ CS
         float densityThreshold = CalculateDensityThreshold(dist);
 
         if (Hash01(index + 777u) > densityThreshold)
-            return;
-
-        float texelSizeWorld = terrainSize.x / (texWidth - 1);
-
-        TerrainNormalData terrainData = CalculateTerrainNormal(texel, texWidth, texHeight, texelSizeWorld);
-
-        if (terrainData.SlopeAngle > 45.0)
             return;
 
         float clumpHash = Hash01(uint(clumpCenter.x * 127 + clumpCenter.y * 311));

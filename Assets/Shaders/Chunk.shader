@@ -34,8 +34,6 @@ CS
 
 	int worldChunkPerRow < Attribute("WorldChunksPerRow"); >;
 
-	int maximumNumberOfUsableChunks <Attribute("MaximumUsableChunks"); >;
-
 	RWStructuredBuffer<ChunkData> chunkData <Attribute("ChunkData"); >;
 
 	float2 terrainSize <Attribute("TerrainSize"); >;
